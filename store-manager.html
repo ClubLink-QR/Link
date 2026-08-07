@@ -63,6 +63,9 @@ button{cursor:pointer;border:0;background:none}
   display:grid;place-items:center;font-size:12px;font-weight:700;flex:0 0 auto}
 .acct .an{font-size:12.5px;font-weight:600;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
 .acct .an small{display:block;font-size:9.5px;color:var(--muted);letter-spacing:.1em;font-weight:600}
+.syncdot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;margin-left:2px}
+.syncdot.on{background:var(--st-serving)}
+.syncdot.off{background:var(--st-empty)}
 @media(max-width:539px){.acct .an{display:none}.acct{padding:4px}}
 
 /* ---------- tabs ---------- */
@@ -479,6 +482,19 @@ body.login main{max-width:none;padding:0}
 .mq span{min-width:26px;text-align:center;font-family:var(--mono);font-size:15px;font-weight:700}
 
 /* ---------- 開閉セクション（▼で増やす／▲で減らす） ---------- */
+/* ---------- 売上 ---------- */
+.daterow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.daterow .inp{width:auto;flex:1 1 130px;min-width:120px}
+.dsep{color:var(--muted);font-size:13px}
+.castable{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:4px 12px;margin-bottom:4px}
+.ctr{display:grid;grid-template-columns:1.6fr .7fr .7fr .7fr 1.1fr;gap:6px;align-items:center;
+  padding:10px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.ctr:last-child{border-bottom:0}
+.ctr.ch{font-size:10.5px;letter-spacing:.08em;color:var(--muted);font-weight:700;padding:9px 0 8px}
+.ctr span:not(:first-child){text-align:center;font-family:var(--mono)}
+.ctr .amt{text-align:right;color:var(--gold);font-weight:700}
+
 .sect{border-bottom:1px solid var(--line)}
 .secth{width:100%;display:flex;align-items:center;gap:10px;padding:15px 3px;text-align:left}
 .secth .stt{font-size:14.5px;font-weight:700}
@@ -590,11 +606,11 @@ function mkTable(n){
 const ROLES = {
   order:   { label:"注文専用", tabs:["order"] },
   kitchen: { label:"厨房",     tabs:["kitchen","stock"] },
-  staff:   { label:"ホール",   tabs:["tables","order","first"] },
-  manager: { label:"管理者",   tabs:["tables","first","kitchen","settings"] }
+  staff:   { label:"ホール",   tabs:["tables","order","first","sales"] },
+  manager: { label:"管理者",   tabs:["tables","first","kitchen","sales","settings"] }
 };
 const TAB_LABEL = { tables:"テーブル", order:"注文", first:"初回",
-                    kitchen:"厨房", stock:"在庫", settings:"設定" };
+                    kitchen:"厨房", stock:"在庫", sales:"売上", settings:"設定" };
 
 const SEED_CATS = ["ドリンク","ボトル・シャンパン","フード","その他"];
 const SEED_PRODUCTS = [
@@ -636,6 +652,7 @@ const state = {
   openCats: {},        // 商品・在庫で開いているジャンル
   openSecs: {},        // 設定で開いているセクション
   rev: 0,              // 注文の更新カウンタ（厨房画面の自動更新に使う）
+  billHistory: [],     // 会計完了ごとに1件ずつ記録（売上タブ・日付検索・キャスト集計に使う）
   rotations: [],
   defaultMin: 10,
   session: null,       // ログイン中のアカウントID
@@ -862,7 +879,9 @@ function render(){
 
   const a = acctOf();
   $("#acct").innerHTML = `<span class="av">${esc((a.name||"?").slice(0,1))}</span>
-    <span class="an">${esc(a.name)}<small>${ROLES[a.role].label}</small></span>`;
+    <span class="an">${esc(a.name)}<small>${ROLES[a.role].label}</small></span>
+    <span class="syncdot ${typeof CLOUD!=="undefined"&&CLOUD?"on":"off"}" title="${
+      typeof CLOUD!=="undefined"&&CLOUD?"他端末と連携中":"この端末のみ（連携なし）"}"></span>`;
 
   if(state.orderTable && !tableOf(state.orderTable)) state.orderTable = null;
   const isTerm = roleOf() === "order";
@@ -873,6 +892,7 @@ function render(){
               : state.tab==="first"   ? viewFirst()
               : state.tab==="kitchen" ? viewKitchen()
               : state.tab==="stock"   ? viewStock()
+              : state.tab==="sales"   ? viewSales()
               : viewSettings());
   lastRev = state.rev;
 
@@ -1032,6 +1052,74 @@ function alertBar(){
         ${nx ? `／ 次は <b>${esc(nx.map(castName).join("・"))}</b>` : "／ これが最終組です"}</div>
       <span class="t" data-tick="rot:${r.id}"></span></div>`;
   }).join("");
+}
+
+/* ---- 売上（日付検索・キャスト別集計） ---- */
+function billsInRange(fromStr, toStr){
+  const from = fromStr ? new Date(fromStr + "T00:00:00").getTime() : -Infinity;
+  const to   = toStr   ? new Date(toStr   + "T23:59:59").getTime() :  Infinity;
+  return state.billHistory.filter(b => b.at >= from && b.at <= to);
+}
+function castStats(bills){
+  const map = {};
+  bills.forEach(b=>{
+    (b.casts.length ? b.casts : ["（担当なし）"]).forEach(name=>{
+      if(!map[name]) map[name] = { name, count:0, nom:0, douhan:0, total:0 };
+      const m = map[name];
+      m.count++;
+      if(b.nom) m.nom++;
+      if(b.douhan) m.douhan++;
+      m.total += b.total;
+    });
+  });
+  return Object.values(map).sort((a,b)=>b.total-a.total);
+}
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+
+function viewSales(){
+  if(!state.salesRange) state.salesRange = { from: todayStr(), to: todayStr() };
+  const rg = state.salesRange;
+  const bills = billsInRange(rg.from, rg.to).sort((a,b)=>b.at-a.at);
+  const grand = bills.reduce((s,b)=>s+b.total, 0);
+  const nomCount = bills.filter(b=>b.nom).length, douhanCount = bills.filter(b=>b.douhan).length;
+  const cs = castStats(bills);
+
+  return `<div class="sec-head" style="margin-top:0"><h2>売上</h2><div class="rule"></div></div>
+    <div class="daterow">
+      <input class="inp" type="date" value="${rg.from}" data-sfrom="1">
+      <span class="dsep">〜</span>
+      <input class="inp" type="date" value="${rg.to}" data-sto="1">
+      <div class="quick">
+        <button data-srange="today">今日</button>
+        <button data-srange="week">直近7日</button>
+        <button data-srange="month">今月</button>
+        <button data-srange="all">全期間</button>
+      </div>
+    </div>
+
+    <div class="gtotal"><span>総計（${bills.length}組）</span><b>${yen(grand)}</b></div>
+    <div class="summary" style="margin:-2px 0 14px">
+      <span class="chip"><span class="n">${nomCount}</span>本 指名</span>
+      <span class="chip"><span class="n">${douhanCount}</span>本 同伴</span>
+      <span class="chip"><span class="n">${bills.filter(b=>b.isFirst).length}</span>組 初回</span>
+    </div>
+
+    <div class="sec-head"><h2>キャスト別</h2><div class="rule"></div></div>
+    ${cs.length ? `<div class="castable">
+        <div class="ctr ch"><span>キャスト</span><span>本数</span><span>指名</span><span>同伴</span><span>小計</span></div>
+        ${cs.map(c=>`<div class="ctr">
+          <span>${esc(c.name)}</span><span>${c.count}</span>
+          <span>${c.nom||"—"}</span><span>${c.douhan||"—"}</span>
+          <span class="amt">${yen(c.total)}</span></div>`).join("")}
+      </div>` : `<div class="empty">この期間の会計データがありません。</div>`}
+
+    <div class="sec-head"><h2>会計履歴</h2><div class="rule"></div></div>
+    ${bills.length ? bills.map(b=>`<div class="hbatch">
+        <div class="hh">${new Date(b.at).toLocaleDateString("ja-JP")} ${hhmm(b.at)}　${esc(b.tableName)}${
+          b.customerName?`　${esc(b.customerName)} 様`:""}<span class="amt">${yen(b.total)}</span></div>
+        <div class="hline"><span class="n">${b.guests}名${b.isFirst?"・初回":""}${b.nom?"・指名":""}${b.douhan?"・同伴":""}${
+          b.casts.length?"・"+esc(b.casts.join("／")):""}</span></div>
+      </div>`).join("") : `<div class="empty">まだ会計はありません。</div>`}`;
 }
 
 /* ---- 厨房：オーダー通知 ---- */
@@ -1720,7 +1808,7 @@ function renderNewRot(){
 
 /* ========== events ========== */
 document.addEventListener("click", e=>{
-  const el = e.target.closest("[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
+  const el = e.target.closest("[data-srange],[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
   if(!el){
     if(e.target.dataset && e.target.dataset.sheet) closeSheet();
     return;
@@ -1903,6 +1991,21 @@ document.addEventListener("click", e=>{
 
   /* sections / categories */
   if(d.sec){ state.openSecs[d.sec] = !state.openSecs[d.sec]; render(); return; }
+  if(d.srange){
+    if(!state.salesRange) state.salesRange = { from: todayStr(), to: todayStr() };
+    const today = todayStr();
+    if(d.srange === "today") state.salesRange = { from: today, to: today };
+    else if(d.srange === "week"){
+      const d7 = new Date(); d7.setDate(d7.getDate()-6);
+      state.salesRange = { from: d7.toISOString().slice(0,10), to: today };
+    } else if(d.srange === "month"){
+      const d1 = new Date(); d1.setDate(1);
+      state.salesRange = { from: d1.toISOString().slice(0,10), to: today };
+    } else if(d.srange === "all"){
+      state.salesRange = { from: "", to: "" };
+    }
+    render(); return;
+  }
   if(d.cat){ state.openCats[d.cat] = !state.openCats[d.cat]; render(); return; }
   if(d.catadd){
     const n = newCat.trim();
@@ -2023,7 +2126,7 @@ document.addEventListener("click", e=>{
 let inputTimer = null;
 function commitSoft(){                     // 入力中は再描画せず配信だけ遅らせて行う
   clearTimeout(inputTimer);
-  inputTimer = setTimeout(()=>{ send(); saveLocal(); }, 400);
+  inputTimer = setTimeout(()=>{ send(); saveLocal(); pushCloud(); }, 400);
 }
 document.addEventListener("input", e=>{
   const t = e.target;
@@ -2081,6 +2184,14 @@ document.addEventListener("input", e=>{
   }
 });
 document.addEventListener("change", e=>{
+  if(e.target.dataset.sfrom !== undefined){
+    if(!state.salesRange) state.salesRange = { from: todayStr(), to: todayStr() };
+    state.salesRange.from = e.target.value; render(); return;
+  }
+  if(e.target.dataset.sto !== undefined){
+    if(!state.salesRange) state.salesRange = { from: todayStr(), to: todayStr() };
+    state.salesRange.to = e.target.value; render(); return;
+  }
   if(e.target.dataset.pcat || e.target.dataset.arole) commitSoft();
   if(e.target.dataset.dtable){ draft.tableId = e.target.value; }
   if(e.target.dataset.pcat){
@@ -2114,6 +2225,18 @@ function go(t, k){
   if(k === "billing"){
     t.billedAt = Date.now();                    // ここでセット料金が確定
     const r = rotOf(t.id); if(r) r.closed = true;   // 会計に進んだら初回回しは終了
+  }
+  if(k === "closed"){
+    const b = bill(t);                          // ここで確定した金額を売上として記録する
+    state.billHistory.push({
+      id: uid(), at: Date.now(),
+      tableName: t.name, customerName: t.customerName || "",
+      guests: t.guests, casts: (t.casts||[]).map(castName),
+      isFirst: b.isFirst, nom: !!t.fees.nom, douhan: !!t.fees.douhan,
+      seatedAt: t.seatedAt, billedAt: t.billedAt,
+      sub: b.sub, svc: b.svc, tax: b.tax, total: b.total,
+      orderCount: orderCount(t.id)
+    });
   }
   if(k === "empty"){
     const r = rotOf(t.id); if(r) r.closed = true;
@@ -2163,18 +2286,27 @@ let lastRev = -1;
 /* ==========================================================
    連携（同期）
    ・BroadcastChannel で「同じブラウザで開いている別タブ／別ウィンドウ」と即時同期します。
-   ・端末をまたぐ同期（タブレット14台）はサーバーが必要です。
-     下の send / onRecv を WebSocket に差し替えるだけで動くようにしてあります。
+   ・window.storage（共有ストレージ）が使える環境では、それを使って
+     「別端末・別ブラウザ」とも数秒おきに同期します。これは Claude 上でこの
+     アプリを開いた場合にだけ使えるAPIです。単体のHTMLファイルとしてダウン
+     ロードし、各タブレットのブラウザで file:// や自前のサーバーから直接開い
+     た場合は使えません（その場合は各端末が独立して動きます）。
+     ・本当に「タブレット14台がリアルタイムで連携する」運用にするには、
+     window.storage が使える形で配信するか、専用のサーバー（Firebase／
+     WebSocketなど）を用意する必要があります。
    ・PERSIST を true にすると、この端末のブラウザに保存して再読み込み後も残ります。
-     （Claudeのプレビュー内では保存が使えないため既定は false）
    ========================================================== */
 const PERSIST = true;                  // 端末のブラウザに保存し、再読み込み後も残す
 const SYNC_KEY = "store-manager-v1";
+const CLOUD_KEY = "state";             // window.storage 上のキー
 const CLIENT_ID = uid();
 const SHARED = ["shopName","tables","casts","categories","products","accounts",
-                "orders","cart","fees","rotations","defaultMin","idleSec","rev"];
+                "orders","cart","fees","rotations","defaultMin","idleSec","rev","billHistory"];
 
-let chan = null, applying = false, syncTimer = null;
+const CLOUD = !!(typeof window !== "undefined" && window.storage &&
+               typeof window.storage.get === "function");   // 端末をまたぐ同期が使えるか
+
+let chan = null, applying = false, syncTimer = null, cloudRev = 0, cloudTimer = null;
 try { chan = new BroadcastChannel(SYNC_KEY); } catch(e) { chan = null; }
 
 const snapshot = () => { const o = {}; SHARED.forEach(k=>o[k] = state[k]); return o; };
@@ -2214,13 +2346,38 @@ if(chan){
   };
 }
 
-/* 状態を変えたら必ずこれを呼ぶ：画面更新＋他タブへ配信＋保存 */
+/* ---- 端末をまたぐ同期（window.storage が使える場合のみ動く） ---- */
+async function pushCloud(){
+  if(!CLOUD) return;
+  try{
+    cloudRev++;
+    const payload = JSON.stringify({ from:CLIENT_ID, rev:cloudRev, at:Date.now(), data:snapshot() });
+    await window.storage.set(CLOUD_KEY, payload, true);   // shared:true = 全端末で共有
+  } catch(e){ /* 送れなくても致命的ではないので黙って諦める */ }
+}
+async function pullCloud(){
+  if(!CLOUD) return;
+  try{
+    const res = await window.storage.get(CLOUD_KEY, true);
+    if(!res || !res.value) return;
+    const m = JSON.parse(res.value);
+    if(!m || m.from === CLIENT_ID || m.rev === cloudRev) return;
+    cloudRev = m.rev;
+    applyRemote(m.data);
+  } catch(e){ /* まだ何も保存されていない場合はここに来る */ }
+}
+if(CLOUD){
+  pullCloud().then(()=>{ if(!state.billHistory) state.billHistory = []; render(); });
+  cloudTimer = setInterval(pullCloud, 4000);   // 4秒おきに他端末の更新を取り込む
+}
+
+/* 状態を変えたら必ずこれを呼ぶ：画面更新＋他タブ／他端末へ配信＋保存 */
 function commit(){
   render();
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(()=>{ send(); saveLocal(); }, 60);
+  syncTimer = setTimeout(()=>{ send(); saveLocal(); pushCloud(); }, 60);
 }
-const syncOn = () => !!chan;
+const syncOn = () => !!chan || CLOUD;
 
 /* ---- 注文端末：無操作が続いたら待機画面に戻す ---- */
 let idleTimer = null;
