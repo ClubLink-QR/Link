@@ -1,0 +1,2301 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>店舗管理</title>
+<style>
+:root{
+  color-scheme:dark;          /* セレクトや数値入力などOS標準部品を暗色で描く（白背景×白文字の防止） */
+  --bg:#101319;
+  --surface:#181C24;
+  --surface2:#202632;
+  --line:#2B3240;
+  --text:#E8EBF1;
+  --muted:#868FA0;
+  --gold:#D7B26D;
+  --st-empty:#5D6B82;
+  --st-serving:#3EA87B;
+  --st-billing:#E3A73C;
+  --st-closed:#8C6B78;
+  --danger:#D65F4E;
+  --r:12px;
+  --font:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",Meiryo,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--font);
+  font-size:15px;line-height:1.5;
+  padding-bottom:calc(72px + env(safe-area-inset-bottom));
+  -webkit-text-size-adjust:100%;
+}
+@media(min-width:760px){body{padding-bottom:24px}}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text)}
+select{-webkit-appearance:none;appearance:none;background-image:none}
+select,option,optgroup{background-color:#1D2230;color:#E8EBF1}
+input,textarea{background-color:var(--surface2)}
+input::placeholder{color:#6E778A}
+button{white-space:nowrap}
+button{cursor:pointer;border:0;background:none}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* ---------- header ---------- */
+.topbar{
+  position:sticky;top:0;z-index:30;
+  background:rgba(16,19,25,.92);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.topbar-in{
+  max-width:1280px;margin:0 auto;padding:8px 14px;min-height:52px;
+  display:flex;align-items:center;gap:10px;
+}
+@media(min-width:760px){.topbar-in{min-height:58px}}
+.brand{display:flex;align-items:baseline;gap:8px;min-width:0}
+.brand b{font-size:15px;font-weight:700;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand span{font-size:11px;color:var(--muted);letter-spacing:.14em}
+.clock{margin-left:auto;font-family:var(--mono);font-size:15px;color:var(--gold);font-variant-numeric:tabular-nums}
+.acct{display:flex;align-items:center;gap:7px;padding:4px 10px 4px 4px;border-radius:999px;
+  background:var(--surface2);border:1px solid var(--line);flex:0 0 auto}
+.acct .av{width:26px;height:26px;border-radius:50%;background:var(--gold);color:#14171E;
+  display:grid;place-items:center;font-size:12px;font-weight:700;flex:0 0 auto}
+.acct .an{font-size:12.5px;font-weight:600;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.acct .an small{display:block;font-size:9.5px;color:var(--muted);letter-spacing:.1em;font-weight:600}
+@media(max-width:539px){.acct .an{display:none}.acct{padding:4px}}
+
+/* ---------- tabs ---------- */
+.tabs{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;
+  display:flex;gap:4px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+  background:rgba(16,19,25,.96);border-top:1px solid var(--line);backdrop-filter:blur(10px);
+}
+.tabs button{
+  flex:1;padding:11px 6px;border-radius:10px;font-size:13px;font-weight:600;
+  color:var(--muted);background:transparent;transition:background .15s,color .15s;
+}
+.tabs button[aria-selected="true"]{background:var(--surface2);color:var(--gold)}
+@media(min-width:760px){
+  .tabs{position:static;background:none;border:0;padding:0;backdrop-filter:none;
+    gap:2px;flex:0 0 auto;background:var(--surface2);border-radius:11px;padding:3px}
+  .tabs button{flex:0 0 auto;padding:7px 18px;font-size:13px}
+}
+
+/* ---------- layout ---------- */
+main{max-width:1280px;margin:0 auto;padding:14px}
+.sec-head{display:flex;align-items:center;gap:10px;margin:22px 0 10px}
+.sec-head:first-child{margin-top:4px}
+.sec-head h2{margin:0;font-size:12px;font-weight:700;letter-spacing:.16em;color:var(--muted)}
+.sec-head .rule{flex:1;height:1px;background:var(--line)}
+
+/* ---------- summary ---------- */
+.summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chip{
+  display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--line);font-size:12.5px;color:var(--muted);
+}
+.chip[aria-pressed="true"]{border-color:var(--gold);color:var(--text)}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.chip .n{font-family:var(--mono);font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.d-empty{color:var(--st-empty)} .d-serving{color:var(--st-serving)}
+.d-billing{color:var(--st-billing)} .d-closed{color:var(--st-closed)}
+
+/* ---------- table grid ---------- */
+.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
+@media(min-width:760px){.grid{grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:12px}}
+.card{
+  position:relative;overflow:hidden;text-align:left;width:100%;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:12px 12px 11px;display:flex;flex-direction:column;gap:6px;min-height:118px;
+  transition:transform .12s ease,border-color .15s;
+}
+.card:active{transform:scale(.985)}
+.card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}
+.card.s-empty{--c:var(--st-empty)}
+.card.s-serving{--c:var(--st-serving);background:linear-gradient(180deg,rgba(62,168,123,.10),transparent 60%),var(--surface)}
+.card.s-billing{--c:var(--st-billing);background:linear-gradient(180deg,rgba(227,167,60,.13),transparent 60%),var(--surface);border-color:rgba(227,167,60,.3)}
+.card.s-closed{--c:var(--st-closed);background:linear-gradient(180deg,rgba(140,107,120,.16),transparent 60%),var(--surface)}
+.card.s-closed::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(135deg,transparent 0 7px,rgba(255,255,255,.05) 7px 14px);
+}
+.card .row1{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
+.card .name{font-size:21px;font-weight:700;letter-spacing:.01em;line-height:1.15}
+.card .stat{font-size:11px;font-weight:700;color:var(--c);white-space:nowrap;padding-top:3px}
+.card .meta{margin-top:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.card .meta .t{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.card .meta .amt{margin-left:auto;font-family:var(--mono);font-weight:700;color:var(--gold);
+  font-variant-numeric:tabular-nums}
+.card .tcasts{font-size:11.5px;color:var(--gold);line-height:1.4;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.card .fbadge{
+  display:inline-flex;align-items:center;gap:5px;align-self:flex-start;
+  padding:3px 8px;border-radius:6px;background:rgba(215,178,109,.14);
+  border:1px solid rgba(215,178,109,.32);color:var(--gold);font-size:11px;font-weight:700;
+}
+.card .fbadge .t{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
+
+/* ---------- rotation card (signature) ---------- */
+.rot{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.rot.over{border-color:rgba(214,95,78,.45)}
+.rot-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:12px}
+.rot-top .tbl{font-size:16px;font-weight:700;color:var(--text)}
+.rot-top .sep{color:var(--line)}
+.rot-now{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.rot-cast{min-width:0}
+.rot-cast .lb{font-size:10.5px;letter-spacing:.16em;color:var(--muted);margin-bottom:2px}
+.rot-cast .nm{font-size:clamp(26px,7vw,40px);font-weight:700;line-height:1.05;color:var(--gold);letter-spacing:.01em;word-break:break-word}
+.rot-time{margin-left:auto;text-align:right}
+.rot-time .lb{font-size:10.5px;letter-spacing:.16em;color:var(--muted);margin-bottom:2px}
+.rot-time .tm{font-family:var(--mono);font-size:clamp(26px,7vw,40px);font-weight:600;font-variant-numeric:tabular-nums;line-height:1.05}
+.rot-time .tm.over{color:var(--danger)}
+.track{display:flex;gap:3px;margin-bottom:10px}
+.seg{flex:1;height:8px;border-radius:3px;background:var(--surface2);overflow:hidden;position:relative}
+.seg.done{background:rgba(215,178,109,.4)}
+.seg .fill{position:absolute;left:0;top:0;bottom:0;background:var(--gold);width:0}
+.seg.over .fill{background:var(--danger)}
+.rot-next{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.rot-next b{color:var(--text);font-weight:600}
+.rot-acts{display:flex;gap:8px;flex-wrap:wrap}
+.rot-list{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:5px}
+.rot-line{display:flex;align-items:center;gap:9px;font-size:13px;padding:3px 0;color:var(--muted)}
+.rot-line .no{width:22px;height:22px;flex:0 0 auto;border-radius:6px;background:var(--surface2);
+  display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700}
+.rot-line.cur{color:var(--text)}
+.rot-line.cur .no{background:var(--gold);color:#14171E}
+.rot-line.past{opacity:.45;text-decoration:line-through}
+.rot-line .names{flex:1;min-width:0}
+.rot-line .clock{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-left:0}
+
+/* ---------- buttons ---------- */
+.btn{
+  padding:11px 16px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);
+  font-size:13.5px;font-weight:600;transition:filter .15s;
+}
+.btn:active{filter:brightness(1.25)}
+.btn.pri{background:var(--gold);border-color:var(--gold);color:#14171E}
+.btn.warn{background:var(--st-billing);border-color:var(--st-billing);color:#1A1408}
+.btn.big{padding:16px;font-size:15.5px;font-weight:700}
+.btn.dan{color:var(--danger);border-color:rgba(214,95,78,.35)}
+.btn.gh{background:transparent}
+.btn.wide{width:100%}
+.btn.sm{padding:8px 12px;font-size:12.5px}
+.btn:disabled{opacity:.4}
+.add{
+  width:100%;padding:15px;border-radius:var(--r);border:1px dashed var(--line);
+  color:var(--muted);font-size:14px;font-weight:600;background:transparent;
+}
+.add:active{border-color:var(--gold);color:var(--gold)}
+
+/* ---------- empty ---------- */
+.empty{padding:34px 16px;text-align:center;color:var(--muted);font-size:13.5px;
+  border:1px dashed var(--line);border-radius:var(--r);margin-bottom:12px}
+
+/* ---------- sheet ---------- */
+.sheet{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;
+  background:rgba(6,8,12,.62)}
+@media(min-width:760px){.sheet{align-items:center;padding:20px}}
+.panel{
+  width:100%;max-width:640px;max-height:90vh;overflow:auto;background:var(--surface);
+  border:1px solid var(--line);border-radius:16px 16px 0 0;
+  padding:18px 16px calc(20px + env(safe-area-inset-bottom));
+}
+@media(min-width:760px){.panel{border-radius:16px;padding-bottom:20px}}
+.panel h3{margin:0 0 14px;font-size:18px;font-weight:700}
+.panel h3 small{display:block;font-size:11.5px;font-weight:500;color:var(--muted);letter-spacing:.1em;margin-top:3px}
+.field{margin-bottom:16px}
+.field>label{display:block;font-size:11.5px;font-weight:700;letter-spacing:.1em;color:var(--muted);margin-bottom:7px}
+.inp{width:100%;padding:11px 12px;border-radius:10px;background:var(--surface2);
+  border:1px solid var(--line);font-size:15px}
+.stepper{display:flex;align-items:center;gap:10px}
+.stepper button{width:44px;height:44px;flex:0 0 auto;border-radius:10px;background:var(--surface2);
+  border:1px solid var(--line);font-size:20px;font-weight:600;display:grid;place-items:center}
+.stepper .val{flex:1;text-align:center;font-family:var(--mono);font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.stepper .val small{font-family:var(--font);font-size:12px;color:var(--muted);font-weight:500;margin-left:3px}
+.quick{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.quick button{padding:6px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--line);font-size:12.5px}
+.quick button[aria-pressed="true"]{border-color:var(--gold);color:var(--gold)}
+.statenow{display:flex;align-items:center;gap:9px;padding:12px 13px;border-radius:10px;
+  background:var(--surface2);border:1px solid var(--line);font-size:14.5px;font-weight:700;margin-bottom:16px}
+.statenow .dot{width:10px;height:10px;border-radius:50%;background:var(--c);flex:0 0 auto}
+.statenow .t{margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--muted);font-size:13px;
+  font-variant-numeric:tabular-nums}
+.statenow.s-empty{--c:var(--st-empty)}
+.statenow.s-serving{--c:var(--st-serving)}
+.statenow.s-billing{--c:var(--st-billing)}
+.statenow.s-closed{--c:var(--st-closed)}
+.flow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12px;color:var(--muted);
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 13px;line-height:1.9}
+.flow b{font-weight:700}
+.flow i{font-style:normal;font-size:11px;opacity:.75}
+.castpick{display:flex;flex-wrap:wrap;gap:7px}
+.castpick button{padding:9px 13px;border-radius:9px;background:var(--surface2);border:1px solid var(--line);font-size:13.5px}
+.castpick button[aria-pressed="true"]{border-color:var(--gold);color:var(--gold)}
+.castpick .idx{font-family:var(--mono);font-size:11px;margin-left:6px;opacity:.8}
+.ordlist{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+.ordrow{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--line);
+  border-radius:9px;padding:7px 9px}
+.ordrow .no{width:22px;height:22px;border-radius:6px;background:var(--gold);color:#14171E;
+  display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;flex:0 0 auto}
+.ordrow .nm{flex:1;min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ordrow button{width:32px;height:32px;border-radius:7px;background:var(--surface);border:1px solid var(--line);
+  display:grid;place-items:center;font-size:14px;color:var(--muted);flex:0 0 auto}
+.round-hint{font-size:12px;color:var(--muted);margin-top:9px;line-height:1.6}
+.round-hint b{color:var(--gold)}
+.sheet-acts{display:flex;gap:8px;margin-top:20px}
+.sheet-acts .btn{flex:1}
+
+/* ---------- settings ---------- */
+.setrow{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);
+  border-radius:10px;padding:8px 10px;margin-bottom:7px}
+.setrow .no{width:26px;flex:0 0 auto;font-family:var(--mono);font-size:11.5px;color:var(--muted);text-align:center}
+.setrow .inp{background:transparent;border:0;padding:6px 2px;font-size:14.5px;color:var(--text)}
+.setrow .inp:focus{outline:none;border-bottom:1px solid var(--gold)}
+.setrow .tog{padding:6px 11px;border-radius:7px;border:1px solid var(--line);font-size:11.5px;
+  font-weight:700;color:var(--muted);flex:0 0 auto;white-space:nowrap}
+.setrow .tog[aria-pressed="true"]{color:var(--st-serving);border-color:rgba(62,168,123,.4)}
+.setrow .del{width:32px;height:32px;border-radius:7px;color:var(--muted);flex:0 0 auto;font-size:15px}
+.note{font-size:12px;color:var(--muted);line-height:1.7;margin:8px 0 0}
+
+/* ---------- login ---------- */
+:root{--tb:53px}
+@media(min-width:760px){:root{--tb:59px}}
+body.login{padding:0}
+body.login .topbar{display:none}
+body.login main{max-width:none;padding:0}
+.login-wrap{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px}
+.login-card{width:100%;max-width:320px;text-align:center}
+.lg-shop{font-size:21px;font-weight:700;letter-spacing:.04em}
+.lg-sub{font-size:10.5px;letter-spacing:.24em;color:var(--muted);margin-top:5px}
+.pindots{display:flex;justify-content:center;gap:15px;margin:32px 0 10px}
+.pindots i{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--line)}
+.pindots i.on{background:var(--gold);border-color:var(--gold)}
+.pinerr{height:18px;font-size:12.5px;color:var(--danger);margin-bottom:12px}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.keypad button{height:58px;border-radius:12px;background:var(--surface);border:1px solid var(--line);
+  font-family:var(--mono);font-size:22px;font-weight:600}
+.keypad button:active{background:var(--surface2)}
+.keypad button.fn{font-family:var(--font);font-size:13.5px;color:var(--muted);background:transparent;border-color:transparent}
+.login-hint{margin-top:24px;font-size:11.5px;color:var(--muted);line-height:1.9;text-align:left;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.login-hint b{color:var(--text);font-weight:600}
+@keyframes shake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(4px)}50%{transform:translateX(-5px)}}
+.shake{animation:shake .35s}
+
+/* ---------- order screen ---------- */
+.tstrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;margin-bottom:2px;
+  scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.tstrip::-webkit-scrollbar{height:0}
+@media(min-width:760px){.tstrip{flex-wrap:wrap;overflow:visible}}
+.tchip{position:relative;overflow:hidden;flex:0 0 auto;scroll-snap-align:start;min-width:92px;text-align:left;
+  padding:9px 12px 9px 15px;border-radius:10px;background:var(--surface);border:1px solid var(--line)}
+.tchip::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c)}
+.tchip.s-empty{--c:var(--st-empty)}
+.tchip.s-serving{--c:var(--st-serving)}
+.tchip.s-billing{--c:var(--st-billing)}
+.tchip.s-closed{--c:var(--st-closed)}
+.tchip[aria-pressed="true"]{border-color:var(--gold);background:var(--surface2)}
+.tchip .tn{font-size:15px;font-weight:700;line-height:1.2}
+.tchip .tm{font-size:10.5px;color:var(--muted);margin-top:3px}
+.tchip .tm.amt{color:var(--gold);font-weight:700;font-family:var(--mono)}
+
+.orderbar{position:sticky;top:var(--tb);z-index:20;display:flex;align-items:center;gap:10px;
+  margin:0 -14px 14px;padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--line)}
+.obt{min-width:0;font-size:19px;font-weight:700;line-height:1.2}
+.obt span{display:block;font-size:11.5px;font-weight:500;color:var(--muted);letter-spacing:.06em;margin-top:2px}
+.obtotal{margin-left:auto;font-family:var(--mono);font-size:20px;font-weight:700;color:var(--gold);
+  font-variant-numeric:tabular-nums}
+.owrap{display:grid;gap:16px}
+@media(min-width:900px){.owrap{grid-template-columns:1fr 330px;align-items:start}
+  .slip{position:sticky;top:calc(var(--tb) + 74px)}}
+.pgrid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}
+@media(min-width:760px){.pgrid{grid-template-columns:repeat(auto-fill,minmax(152px,1fr))}}
+.pcard{position:relative;text-align:left;background:var(--surface);border:1px solid var(--line);
+  border-radius:10px;padding:12px 11px;min-height:76px;display:flex;flex-direction:column;
+  justify-content:space-between;gap:6px;transition:transform .1s,border-color .15s}
+.pcard:active{transform:scale(.97);border-color:var(--gold)}
+.pcard:disabled{opacity:.4}
+.pcard .pn{font-size:13.5px;font-weight:600;line-height:1.35}
+.pcard .pp{font-family:var(--mono);font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.pcard .q{position:absolute;top:-7px;right:-7px;min-width:23px;height:23px;padding:0 6px;border-radius:12px;
+  background:var(--gold);color:#14171E;font-family:var(--mono);font-size:12px;font-weight:700;
+  display:grid;place-items:center}
+.slip{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 13px}
+.srow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.srow:last-of-type{border-bottom:0}
+.sn{flex:1;min-width:0;font-size:13.5px;line-height:1.35}
+.sn span{display:block;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.sqc{display:flex;align-items:center;gap:4px;flex:0 0 auto}
+.sqc button{width:29px;height:29px;border-radius:7px;background:var(--surface2);border:1px solid var(--line);
+  font-size:15px;display:grid;place-items:center}
+.sqc .q{width:22px;text-align:center;font-family:var(--mono);font-size:13.5px;font-weight:700}
+.sq{font-family:var(--mono);font-size:13.5px;color:var(--muted)}
+.ss{width:76px;text-align:right;font-family:var(--mono);font-size:13.5px;font-variant-numeric:tabular-nums;flex:0 0 auto}
+.stotal{display:flex;align-items:baseline;gap:8px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.stotal span{font-size:11.5px;letter-spacing:.14em;color:var(--muted);font-weight:700}
+.stotal b{margin-left:auto;font-family:var(--mono);font-size:22px;color:var(--gold);font-variant-numeric:tabular-nums}
+.sact{margin-top:12px}
+.sact .btn{width:100%}
+
+/* ---------- product master ---------- */
+.prow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--surface);
+  border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:7px}
+.prow .no{width:22px;flex:0 0 auto;font-family:var(--mono);font-size:11.5px;color:var(--muted);text-align:center}
+.prow .nm{flex:1 1 150px;min-width:110px;background:transparent;border:0;padding:6px 2px;font-size:14.5px;color:var(--text)}
+.prow .nm:focus{outline:none;border-bottom:1px solid var(--gold)}
+.prow-b{display:flex;align-items:center;gap:6px;margin-left:auto}
+.prow .yen{color:var(--muted);font-size:13px}
+.prow .pr{width:88px;background:var(--surface2);border:1px solid var(--line);border-radius:7px;
+  padding:6px 8px;text-align:right;font-family:var(--mono);font-size:14px}
+.prow .rl{width:106px;background:var(--surface2);border:1px solid var(--line);border-radius:7px;
+  padding:6px 8px;font-size:13px}
+.prow .pin{width:66px;background:var(--surface2);border:1px solid var(--line);border-radius:7px;
+  padding:6px 8px;text-align:center;font-family:var(--mono);font-size:14px;letter-spacing:.14em}
+.prow-b button{width:32px;height:32px;border-radius:7px;background:var(--surface);border:1px solid var(--line);
+  display:grid;place-items:center;font-size:14px;color:var(--muted);flex:0 0 auto}
+.prow-b button:disabled{opacity:.3}
+
+/* ---------- order terminal ---------- */
+.term-idle{width:100%;min-height:62vh;display:grid;place-items:center;text-align:center;padding:30px 20px}
+.ti-lb{font-size:10.5px;letter-spacing:.32em;color:var(--muted)}
+.ti-no{font-size:clamp(54px,15vw,108px);font-weight:700;line-height:1;letter-spacing:.02em;margin:6px 0 4px}
+.ti-cta{margin-top:28px;font-size:clamp(16px,3.6vw,21px);font-weight:700;color:var(--gold);
+  border:1px solid rgba(215,178,109,.42);border-radius:999px;padding:16px 30px;
+  background:rgba(215,178,109,.08);display:inline-block}
+@keyframes softpulse{0%,100%{opacity:1}50%{opacity:.55}}
+.ti-cta.live{animation:softpulse 2.6s ease-in-out infinite}
+.ti-note{margin-top:16px;font-size:13px;color:var(--muted)}
+.ti-note b{color:var(--gold);font-family:var(--mono)}
+.thanks{font-size:clamp(19px,4.4vw,31px);font-weight:700;line-height:1.7;letter-spacing:.04em;
+  margin:20px 0 6px}
+.ghosthit{display:block;width:100%;max-width:300px;height:96px;margin:22px auto 0;
+  background:transparent;border:0;padding:0;opacity:0}
+
+.term-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;
+  border-bottom:1px solid var(--line)}
+.th-no{font-size:22px;font-weight:700;line-height:1.2}
+.th-st{font-size:11.5px;color:var(--muted);margin-top:2px}
+.th-tot{margin-left:auto;font-family:var(--mono);font-size:18px;font-weight:700;color:var(--gold);
+  font-variant-numeric:tabular-nums}
+
+.tcard{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:11px;display:flex;flex-direction:column;gap:8px}
+.tcard.on{border-color:var(--gold);background:linear-gradient(180deg,rgba(215,178,109,.09),transparent 70%),var(--surface)}
+.tcard .ptap{width:100%;text-align:left;display:flex;flex-direction:column;justify-content:space-between;
+  gap:6px;min-height:50px}
+.tcard .pn{font-size:13.5px;font-weight:600;line-height:1.35}
+.tcard .pp{font-family:var(--mono);font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.pqty{display:flex;align-items:center;gap:6px;border-top:1px solid var(--line);padding-top:8px}
+.pqty button{width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--line);
+  font-size:16px;display:grid;place-items:center;flex:0 0 auto}
+.pqty .n{flex:1;text-align:center;font-family:var(--mono);font-size:15px;font-weight:700}
+
+.gtotal{display:flex;align-items:baseline;gap:10px;background:var(--surface2);border:1px solid var(--line);
+  border-radius:var(--r);padding:13px 14px;margin-bottom:12px}
+.gtotal span{font-size:11.5px;letter-spacing:.14em;color:var(--muted);font-weight:700}
+.gtotal b{margin-left:auto;font-family:var(--mono);font-size:24px;color:var(--gold);font-variant-numeric:tabular-nums}
+
+.hbatch{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:8px}
+.hbatch .hh{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;font-size:11px;
+  letter-spacing:.1em;color:var(--muted);font-weight:700}
+.hbatch .hh .amt{margin-left:auto;font-family:var(--mono);color:var(--gold);font-size:13px;letter-spacing:0}
+.hline{display:flex;gap:8px;font-size:13.5px;padding:3px 0}
+.hline .n{flex:1;min-width:0}
+.hline .q{font-family:var(--mono);color:var(--muted)}
+.hline .a{width:74px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.gearrow{display:flex;justify-content:flex-end;margin-bottom:-6px}
+.gear{width:38px;height:38px;border-radius:9px;color:var(--muted);font-size:17px;
+  display:grid;place-items:center;border:1px solid transparent}
+.gear:active{background:var(--surface2);color:var(--text)}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px}
+.tsel{padding:17px 8px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);
+  font-size:17px;font-weight:700}
+.tsel.on{border-color:var(--gold);color:var(--gold)}
+.pinbox{text-align:center;font-family:var(--mono);font-size:24px;letter-spacing:.5em;padding-left:.5em}
+
+.termfoot{position:fixed;left:0;right:0;bottom:0;z-index:40;
+  background:rgba(16,19,25,.97);border-top:1px solid var(--line);backdrop-filter:blur(10px);
+  padding-bottom:env(safe-area-inset-bottom)}
+.confirmbar{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.confirmbar .cb{display:flex;align-items:baseline;gap:8px;min-width:0}
+.confirmbar .cb b{font-family:var(--mono);font-size:19px;color:var(--gold);font-variant-numeric:tabular-nums}
+.confirmbar .cb span{font-size:12px;color:var(--muted)}
+.confirmbar .btn{margin-left:auto;flex:0 0 auto}
+.termnav{display:flex;gap:6px;padding:8px 12px}
+.termnav button{flex:1;padding:9px 6px;border-radius:10px;background:transparent;color:var(--muted);
+  font-size:12.5px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
+.termnav button[aria-selected="true"]{background:var(--surface2);color:var(--gold)}
+.termnav .sub{font-family:var(--mono);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+
+.bhead{display:flex;align-items:baseline;gap:8px;font-size:10.5px;letter-spacing:.12em;color:var(--muted);
+  font-weight:700;margin:12px 0 2px;padding-top:9px;border-top:1px solid var(--line)}
+.bhead span{margin-left:auto;font-family:var(--mono);letter-spacing:0}
+.bhead.first{margin-top:0;padding-top:0;border-top:0}
+
+.prow .flab{flex:1 1 160px;min-width:120px;font-size:14px;line-height:1.35}
+.prow .flab small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.feegrid{display:grid;gap:7px}
+.feebtn{display:flex;align-items:center;gap:9px;padding:12px 13px;border-radius:10px;
+  background:var(--surface2);border:1px solid var(--line);font-size:14px;font-weight:600;text-align:left}
+.feebtn .ck{width:20px;height:20px;flex:0 0 auto;border-radius:5px;border:1px solid var(--line);
+  display:grid;place-items:center;font-size:11px;color:transparent}
+.feebtn[aria-pressed="true"]{border-color:rgba(215,178,109,.5)}
+.feebtn[aria-pressed="true"] .ck{background:var(--gold);border-color:var(--gold);color:#14171E}
+.feebtn .sub{font-size:11px;color:var(--muted);font-weight:500}
+.feebtn b{margin-left:auto;font-family:var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.feebtn[aria-pressed="true"] b{color:var(--gold)}
+
+/* ---------- animations（軽量・CSSのみ） ---------- */
+@keyframes sheetIn{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+@keyframes barIn{from{transform:translateY(100%)}to{transform:none}}
+@keyframes rowIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes toastIn{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes badge{0%,100%{transform:scale(1)}50%{transform:scale(1.16)}}
+.panel{animation:sheetIn .18s ease-out}
+.confirmbar{animation:barIn .18s ease-out}
+.korder.in{animation:rowIn .22s ease-out}
+.nbadge.live{animation:badge 1.6s ease-in-out infinite}
+
+/* ---------- 縦型メニュー ---------- */
+.mlist{border-top:1px solid var(--line)}
+.mcat{position:sticky;top:var(--tb);z-index:10;background:var(--bg);
+  font-size:10.5px;letter-spacing:.16em;font-weight:700;color:var(--gold);
+  padding:12px 2px 7px;border-bottom:1px solid var(--line)}
+.mrow{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);
+  transition:background .15s,box-shadow .15s}
+.mrow.on{background:rgba(215,178,109,.07);box-shadow:inset 3px 0 0 var(--gold)}
+.mrow.sold{opacity:.42}
+.mtap{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:15px 10px 15px 12px;text-align:left}
+.mn{flex:1;min-width:0;font-size:15px;font-weight:600;line-height:1.35}
+.mn em{font-style:normal;margin-left:8px;font-size:10.5px;font-weight:700;color:var(--danger);
+  border:1px solid rgba(214,95,78,.4);border-radius:5px;padding:2px 6px;vertical-align:2px}
+.mp{font-family:var(--mono);font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums;flex:0 0 auto}
+.mrow.on .mp{color:var(--gold)}
+.mq{display:flex;align-items:center;gap:5px;padding-right:8px;flex:0 0 auto}
+.mq button{width:34px;height:34px;border-radius:8px;background:var(--surface2);border:1px solid var(--line);
+  font-size:17px;display:grid;place-items:center}
+.mq span{min-width:26px;text-align:center;font-family:var(--mono);font-size:15px;font-weight:700}
+
+/* ---------- 開閉セクション（▼で増やす／▲で減らす） ---------- */
+.sect{border-bottom:1px solid var(--line)}
+.secth{width:100%;display:flex;align-items:center;gap:10px;padding:15px 3px;text-align:left}
+.secth .stt{font-size:14.5px;font-weight:700}
+.secth .smeta{font-size:11.5px;color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}
+.secth .sar{margin-left:auto;color:var(--muted);font-size:11px;transition:color .15s}
+.secth[aria-expanded="true"] .stt,.secth[aria-expanded="true"] .sar{color:var(--gold)}
+.sectb{padding:2px 0 20px;animation:rowIn .18s ease-out}
+
+/* ---------- 交代アラート ---------- */
+.alert{display:flex;align-items:center;gap:10px;background:rgba(227,167,60,.13);
+  border:1px solid rgba(227,167,60,.45);border-radius:var(--r);padding:11px 13px;margin-bottom:10px;
+  font-size:13.5px;line-height:1.45;animation:rowIn .2s ease-out}
+.alert .ai{width:9px;height:9px;border-radius:50%;background:var(--st-billing);flex:0 0 auto;
+  animation:softpulse 1.3s ease-in-out infinite}
+.alert b{color:var(--gold)}
+.alert .t{margin-left:auto;font-family:var(--mono);font-weight:700;color:var(--st-billing);
+  font-variant-numeric:tabular-nums;flex:0 0 auto}
+.rot.soon{border-color:rgba(227,167,60,.5)}
+
+/* ---------- 折りたたみジャンル ---------- */
+.grp{margin-bottom:8px}
+.grph{width:100%;display:flex;align-items:center;gap:9px;padding:13px 13px;border-radius:10px;
+  background:var(--surface);border:1px solid var(--line);font-size:14.5px;font-weight:700;text-align:left}
+.grph .ar{order:3;margin-left:auto;color:var(--muted);font-size:11px}
+.grph[aria-expanded="true"]{border-color:rgba(215,178,109,.4);color:var(--gold)}
+.grph[aria-expanded="true"] .ar{color:var(--gold)}
+.grph b{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--muted)}
+.grpb{padding:9px 0 2px;animation:rowIn .18s ease-out}
+.add.sm{padding:11px;font-size:13px}
+
+/* ---------- 厨房：オーダー通知 ---------- */
+.nbadge{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 6px;border-radius:10px;
+  background:var(--danger);color:#fff;font-family:var(--mono);font-size:11px;font-weight:700}
+.korder{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:13px 14px;margin-bottom:9px}
+.korder.new{border-color:rgba(227,167,60,.55);background:linear-gradient(180deg,rgba(227,167,60,.10),transparent 60%),var(--surface)}
+.korder .kh{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.korder .kt{font-size:19px;font-weight:700}
+.korder .km{font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.korder .ka{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--gold);font-weight:700}
+.korder .kl{display:flex;gap:8px;font-size:14.5px;padding:4px 0}
+.korder .kl .n{flex:1}
+.korder .kl .q{font-family:var(--mono);font-weight:700;color:var(--gold)}
+.korder .btn{margin-top:11px;width:100%}
+.korder.done{opacity:.5}
+
+/* ---------- 在庫 ---------- */
+.tog{padding:7px 11px;border-radius:7px;border:1px solid var(--line);font-size:11.5px;
+  font-weight:700;color:var(--muted);flex:0 0 auto;background:var(--surface2);white-space:nowrap}
+.slab{font-size:11.5px;color:var(--muted);white-space:nowrap;flex:0 0 auto}
+.strow{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:7px}
+.strow.out{border-color:rgba(214,95,78,.4)}
+.strow .sname{font-size:14.5px;font-weight:600;line-height:1.35}
+.strow .sname small{color:var(--muted);font-family:var(--mono);font-weight:500;margin-left:8px;font-size:12px}
+.strow .sname em{font-style:normal;margin-left:8px;font-size:10.5px;font-weight:700;color:var(--danger);
+  border:1px solid rgba(214,95,78,.4);border-radius:5px;padding:2px 6px}
+.strow .sctl{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:9px}
+.sync{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:10px}
+.sync .dot{width:8px;height:8px;border-radius:50%;background:var(--st-serving);flex:0 0 auto}
+.sync.off .dot{background:var(--st-closed)}
+.tog[aria-pressed="true"]{color:var(--st-serving);border-color:rgba(62,168,123,.45)}
+.tog.warn[aria-pressed="true"]{color:var(--danger);border-color:rgba(214,95,78,.45)}
+.stk{width:56px;background:var(--surface2);border:1px solid var(--line);border-radius:7px;
+  padding:6px 4px;text-align:center;font-family:var(--mono);font-size:14px}
+.prow-b .sq{width:30px;height:30px;border-radius:7px;background:var(--surface2);border:1px solid var(--line);
+  display:grid;place-items:center;font-size:15px;color:var(--text);flex:0 0 auto}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));
+  background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 16px;
+  font-size:13px;z-index:80;box-shadow:0 8px 24px rgba(0,0,0,.5);animation:toastIn .18s ease-out}
+@media(min-width:760px){.toast{bottom:24px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand"><b id="shopName">店舗管理</b></div>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+    <div class="clock" id="clock">--:--</div>
+    <button class="acct" id="acct" data-acct="1"></button>
+  </div>
+</header>
+
+<main id="view"></main>
+<div id="sheetHost"></div>
+
+<script>
+"use strict";
+
+/* ========== state ========== */
+const uid = () => Math.random().toString(36).slice(2, 9);
+const S = {
+  empty:   { key:"empty",   label:"空席",     cls:"d-empty",   color:"var(--st-empty)" },
+  serving: { key:"serving", label:"接客中",   cls:"d-serving", color:"var(--st-serving)" },
+  billing: { key:"billing", label:"会計待ち", cls:"d-billing", color:"var(--st-billing)" },
+  closed:  { key:"closed",  label:"使用不可", cls:"d-closed",  color:"var(--st-closed)" }
+};
+const ORDER = ["empty","serving","billing","closed"];
+
+function mkTable(n){
+  return { id:uid(), name:String(n), status:"empty", guests:0, statusSince:Date.now(),
+           seatedAt:null, billedAt:null, firstFee:null, casts:[],
+           fees:{ set:true, nom:true, douhan:false } };
+}
+/* 権限：注文専用 / 厨房 / ホール / 管理者 */
+const ROLES = {
+  order:   { label:"注文専用", tabs:["order"] },
+  kitchen: { label:"厨房",     tabs:["kitchen","stock"] },
+  staff:   { label:"ホール",   tabs:["tables","order","first"] },
+  manager: { label:"管理者",   tabs:["tables","first","kitchen","settings"] }
+};
+const TAB_LABEL = { tables:"テーブル", order:"注文", first:"初回",
+                    kitchen:"厨房", stock:"在庫", settings:"設定" };
+
+const SEED_CATS = ["ドリンク","ボトル・シャンパン","フード","その他"];
+const SEED_PRODUCTS = [
+  ["キャストドリンク", 1500, "ドリンク", 99], ["ハイボール", 1000, "ドリンク", 60],
+  ["ビール", 1200, "ドリンク", 48], ["焼酎（グラス）", 1000, "ドリンク", 60],
+  ["ソフトドリンク", 800, "ドリンク", 60],
+  ["ハウスボトル", 15000, "ボトル・シャンパン", 12], ["モエ・シャンドン", 50000, "ボトル・シャンパン", 6],
+  ["ヴーヴ・クリコ", 60000, "ボトル・シャンパン", 4], ["ドン ペリニヨン 白", 120000, "ボトル・シャンパン", 2],
+  ["フルーツ盛り", 5000, "フード", 15], ["乾き物", 1500, "フード", 30], ["チョコレート", 1200, "フード", 20]
+];
+const state = {
+  shopName:"店舗管理",
+  tables: Array.from({length:10}, (_,i)=>mkTable(i+1)),
+  casts: ["キャストA","キャストB","キャストC","キャストD","キャストE","キャストF"]
+          .map(n=>({ id:uid(), name:n, active:true })),
+  categories: SEED_CATS.slice(),
+  products: SEED_PRODUCTS.map(([name,price,cat,stock])=>
+    ({ id:uid(), name, price, cat, stock, track: cat==="ボトル・シャンパン", soldout:false })),
+  accounts: [
+    { id:uid(), name:"注文端末", role:"order",   pin:"1111" },
+    { id:uid(), name:"ホール",   role:"staff",   pin:"2222" },
+    { id:uid(), name:"厨房",     role:"kitchen", pin:"3333" },
+    { id:uid(), name:"店長",     role:"manager", pin:"9999" }
+  ],
+  orders: {},          // tableId -> [{id, at, manual, lines:[...]}]
+  cart: {},            // tableId -> [{productId, name, price, qty}]（確定前）
+  fees: {              // 自動でつく料金（すべてカスタム可）
+    setBase:3000,      // セット料金の基本
+    setStep:1000,      // 1時間経過ごとの加算
+    setCap:5000,       // ここに達したらフリータイム（打ち止め）
+    nom:1000,          // 指名料
+    douhan:1000,       // 同伴料
+    first:1000,        // 初回料金（初回回しの開始時に 1000 か 0 を選ぶ）
+    service:10, serviceOn:true,   // サービス料（％）
+    tax:10,     taxOn:true        // 消費税（％）
+  },
+  idleSec: 60,         // 注文端末が待機画面に戻るまでの無操作時間
+  openCats: {},        // 商品・在庫で開いているジャンル
+  openSecs: {},        // 設定で開いているセクション
+  rev: 0,              // 注文の更新カウンタ（厨房画面の自動更新に使う）
+  rotations: [],
+  defaultMin: 10,
+  session: null,       // ログイン中のアカウントID
+  pin: "", pinErr: "",
+  tab:"tables",
+  filter:"all",
+  orderTable:null,     // 注文タブ（ホール・管理者）で選択中の卓
+  deviceTable:null,    // この端末に固定された卓（歯車＋管理者PINで設定）
+  term:{ stage:"idle", tab:"menu" }   // 注文端末の画面状態
+};
+
+/* ========== helpers ========== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const castName = id => (state.casts.find(c=>c.id===id)||{name:"—"}).name;
+const tableOf = id => state.tables.find(t=>t.id===id);
+const rotOf = tid => state.rotations.find(r=>r.tableId===tid && !r.closed);
+const prodOf = id => state.products.find(p=>p.id===id);
+/* ジャンルごとに [ジャンル名, 商品配列] を返す（未分類は最後） */
+function prodGroups(){
+  const gs = state.categories.map(c => [c, state.products.filter(p=>p.cat===c)]);
+  const rest = state.products.filter(p => !state.categories.includes(p.cat));
+  if(rest.length) gs.push(["未分類", rest]);
+  return gs.filter(([,ps])=>ps.length);
+}
+
+/* ---- アカウント / 権限 ---- */
+const acctOf = () => state.accounts.find(a=>a.id===state.session) || null;
+const roleOf = () => (acctOf() || {role:"manager"}).role;
+const allowedTabs = () => ROLES[roleOf()].tabs;
+const can = k => {
+  const r = roleOf();
+  if(k === "settings") return r === "manager";                  // 設定は管理者のみ
+  if(k === "manage")   return r === "staff" || r === "manager"; // 卓の状態変更・会計完了
+  if(k === "order")    return r === "order" || r === "staff";  // 注文の入力（管理者は不可）
+  return true;
+};
+
+/* ---- 注文（確定した「一回のオーダー」単位で積む） ---- */
+const yen = n => "¥" + Number(n||0).toLocaleString("ja-JP");
+const batchesOf = tid => state.orders[tid] || [];
+const allLines = tid => batchesOf(tid).flatMap(b=>b.lines);
+const orderTotal = tid => allLines(tid).reduce((s,l)=>s + l.price*l.qty, 0);
+const orderCount = tid => allLines(tid).reduce((s,l)=>s + l.qty, 0);
+const batchSum = b => b.lines.reduce((s,l)=>s + l.price*l.qty, 0);
+
+function pushBatch(tid, lines, manual){
+  if(!state.orders[tid]) state.orders[tid] = [];
+  state.orders[tid].push({ id:uid(), at:Date.now(), manual:!!manual, done:false, lines });
+  state.rev++;                       // 厨房画面に新着として届く
+}
+/* 厨房のオーダー一覧（全卓を新しい順に） */
+function kitchenFeed(){
+  const out = [];
+  state.tables.forEach(t => batchesOf(t.id).forEach(b => out.push({ b, t })));
+  return out.sort((x,y)=>y.b.at - x.b.at);
+}
+function findBatch(bid){
+  for(const tid in state.orders){
+    const b = state.orders[tid].find(x=>x.id===bid);
+    if(b) return { b, t: tableOf(tid) };
+  }
+  return null;
+}
+/* スタッフの手入力ぶんは1つのまとまりに追記していく */
+function addLine(tid, pid){
+  const p = prodOf(pid); if(!p) return;
+  if(!state.orders[tid]) state.orders[tid] = [];
+  let b = state.orders[tid].find(x=>x.manual && !x.done);
+  if(!b){ b = { id:uid(), at:Date.now(), manual:true, done:false, lines:[] }; state.orders[tid].push(b); }
+  // 同じ商品でも売値が変わっていれば別行にする（注文時点の値段を保持）
+  const hit = b.lines.find(l => l.productId===pid && l.price===p.price);
+  if(hit) hit.qty++;
+  else b.lines.push({ id:uid(), productId:pid, name:p.name, price:p.price, qty:1 });
+  b.at = Date.now(); takeStock(pid, 1); state.rev++;
+}
+function setQty(tid, lid, dv){
+  const bs = state.orders[tid]; if(!bs) return;
+  for(const b of bs){
+    const l = b.lines.find(x=>x.id===lid);
+    if(l){ l.qty += dv; if(l.qty <= 0) b.lines = b.lines.filter(x=>x.id!==lid); break; }
+  }
+  state.orders[tid] = bs.filter(b=>b.lines.length);
+}
+
+/* ---- 料金（入店時刻から自動計算。会計を押した時点で止まる） ---- */
+const stayEnd = t => t.billedAt || Date.now();
+const stayHours = t => t.seatedAt ? Math.floor((stayEnd(t) - t.seatedAt) / 3600000) : 0;
+function setFee(t){
+  if(!t.seatedAt) return 0;
+  return Math.min(state.fees.setBase + stayHours(t) * state.fees.setStep, state.fees.setCap);
+}
+const isFreeTime = t => t.seatedAt && setFee(t) >= state.fees.setCap;
+
+function feeLines(t){
+  if(!t.seatedAt) return [];
+  const out = [];
+  if(t.firstFee !== null && t.firstFee !== undefined){
+    const n = Math.max(1, t.guests || 1);
+    out.push({ key:"first", name:"初回料金", amount:t.firstFee * n,
+               note:`${yen(t.firstFee)} × ${n}名` });
+  }
+  if(t.fees.set) out.push({ key:"set", name:"セット料金", amount:setFee(t),
+    note: isFreeTime(t) ? "フリータイム" : (stayHours(t) ? `${stayHours(t)}時間経過` : "1時間以内") });
+  if(t.fees.nom)    out.push({ key:"nom",    name:"指名料", amount:state.fees.nom });
+  if(t.fees.douhan) out.push({ key:"douhan", name:"同伴料", amount:state.fees.douhan });
+  return out;
+}
+const feeTotal  = t => feeLines(t).reduce((s,l)=>s + l.amount, 0);
+
+/* 小計 → サービス料 → 消費税 → 合計 */
+function bill(t){
+  if(!t) return { sub:0, svc:0, tax:0, total:0 };
+  const sub = feeTotal(t) + orderTotal(t.id);
+  const svc = state.fees.serviceOn ? Math.floor(sub * state.fees.service / 100) : 0;
+  const tax = state.fees.taxOn ? Math.floor((sub + svc) * state.fees.tax / 100) : 0;
+  const raw = sub + svc + tax;
+  const total = Math.floor(raw / 100) * 100;      // 下二桁切り捨て
+  return { sub, svc, tax, raw, cut: raw - total, total };
+}
+const billTotal = t => bill(t).total;
+
+/* 小計・サービス料・消費税・合計の表示ブロック */
+function totalsBlock(t){
+  const b = bill(t);
+  const line = (l,v)=>`<div class="srow"><div class="sn">${l}</div><div class="ss">${yen(v)}</div></div>`;
+  return `${(b.svc||b.tax||b.cut) ? `<div class="bhead">お会計<span>${yen(b.sub)}</span></div>
+      ${b.svc ? line(`サービス料 ${state.fees.service}%`, b.svc) : ""}
+      ${b.tax ? line(`消費税 ${state.fees.tax}%`, b.tax) : ""}
+      ${b.cut ? `<div class="srow"><div class="sn">端数切り捨て<span>下2桁</span></div>
+          <div class="ss">−${yen(b.cut)}</div></div>` : ""}` : ""}
+    <div class="stotal"><span>合計</span><b>${yen(b.total)}</b></div>`;
+}
+
+/* ---- カート（確定前） ---- */
+const cartOf = tid => state.cart[tid] || [];
+const cartTotal = tid => cartOf(tid).reduce((s,l)=>s + l.price*l.qty, 0);
+const cartCount = tid => cartOf(tid).reduce((s,l)=>s + l.qty, 0);
+
+function cartAdd(tid, pid, dv){
+  const p = prodOf(pid); if(!p) return;
+  if(!state.cart[tid]) state.cart[tid] = [];
+  const c = state.cart[tid];
+  const hit = c.find(l=>l.productId===pid);
+  if(hit){
+    hit.qty += dv;
+    if(hit.qty <= 0) state.cart[tid] = c.filter(l=>l.productId!==pid);
+  } else if(dv > 0){
+    c.push({ productId:pid, name:p.name, price:p.price, qty:dv });
+  }
+}
+function takeStock(pid, qty){
+  const p = prodOf(pid); if(!p || !p.track) return;   // 在庫管理する商品だけ減らす
+  p.stock = Math.max(0, p.stock - qty);
+}
+function cartConfirm(tid){
+  const c = cartOf(tid); if(!c.length) return false;
+  const t = tableOf(tid);
+  if(t.status === "empty") go(t, "serving");   // 注文が入った時点で接客中に
+  pushBatch(tid, c.map(l=>({ id:uid(), productId:l.productId, name:l.name, price:l.price, qty:l.qty })), false);
+  c.forEach(l=>takeStock(l.productId, l.qty));
+  state.cart[tid] = [];
+  return true;
+}
+const outOfStock = p => p.track && p.stock <= 0;                 // 在庫切れ＝欠品
+const soldOut = p => p.soldout || outOfStock(p);                 // 注文できない状態
+const stockLabel = p => p.soldout ? "品切れ" : (outOfStock(p) ? "欠品" : "");
+
+function fmt(ms){
+  const neg = ms < 0; const s = Math.floor(Math.abs(ms)/1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), x = s%60;
+  const p = n => String(n).padStart(2,"0");
+  return (neg?"+":"") + (h>0 ? `${h}:${p(m)}:${p(x)}` : `${m}:${p(x)}`);
+}
+function hhmm(ts){ const d=new Date(ts); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+
+function toast(msg){
+  const old = document.querySelector(".toast"); if(old) old.remove();
+  const el = document.createElement("div"); el.className="toast"; el.textContent=msg;
+  document.body.appendChild(el); setTimeout(()=>el.remove(), 2200);
+}
+
+/* ---- rotation math ---- */
+function rounds(r){
+  const out = [];
+  for(let i=0;i<r.order.length;i+=r.perRound) out.push(r.order.slice(i,i+r.perRound));
+  return out;
+}
+function elapsed(r){
+  return r.elapsedMs + (r.runningSince ? Date.now()-r.runningSince : 0);
+}
+function limitMs(r){ return r.minutes*60*1000; }
+function remain(r){ return limitMs(r) - elapsed(r); }
+
+function advance(r){
+  const total = rounds(r).length;
+  if(r.index + 1 >= total){ r.done = true; r.runningSince = null; r.elapsedMs = 0; }
+  else { r.index++; r.elapsedMs = 0; r.runningSince = Date.now(); }
+  render();
+}
+
+/* ========== render ========== */
+function render(){
+  const v = $("#view");
+
+  /* 未ログイン：ログイン画面のみ */
+  if(!state.session){
+    document.body.classList.add("login");
+    v.innerHTML = viewLogin();
+    return;
+  }
+  document.body.classList.remove("login");
+
+  $("#shopName").textContent = state.shopName || "店舗管理";
+
+  /* 権限外のタブに居たら、その権限で最初のタブへ戻す */
+  const tabs = allowedTabs();
+  if(!tabs.includes(state.tab)) state.tab = tabs[0];
+  const pend = kitchenFeed().filter(x=>!x.b.done).length;
+  $("#tabs").innerHTML = tabs.map(t=>
+    `<button role="tab" data-tab="${t}" aria-selected="${state.tab===t}">${TAB_LABEL[t]}${
+      (t==="kitchen" && pend) ? ` <span class="nbadge live">${pend}</span>` : ""}</button>`).join("");
+  $("#tabs").style.display = tabs.length > 1 ? "" : "none";
+
+  const a = acctOf();
+  $("#acct").innerHTML = `<span class="av">${esc((a.name||"?").slice(0,1))}</span>
+    <span class="an">${esc(a.name)}<small>${ROLES[a.role].label}</small></span>`;
+
+  if(state.orderTable && !tableOf(state.orderTable)) state.orderTable = null;
+  const isTerm = roleOf() === "order";
+
+  const ab = alertBar();
+  v.innerHTML = ab + (state.tab==="tables"  ? viewTables()
+              : state.tab==="order"   ? (isTerm ? viewTerminal() : viewOrder())
+              : state.tab==="first"   ? viewFirst()
+              : state.tab==="kitchen" ? viewKitchen()
+              : state.tab==="stock"   ? viewStock()
+              : viewSettings());
+  lastRev = state.rev;
+
+  /* 固定フッターぶんの余白を実寸で確保 */
+  const foot = document.querySelector(".termfoot");
+  document.body.style.paddingBottom = foot ? (foot.offsetHeight + 18) + "px" : "";
+  tick();
+  resetIdle();
+}
+
+/* ---- login ---- */
+function viewLogin(){
+  const dots = [0,1,2,3].map(i=>`<i class="${i<state.pin.length?"on":""}"></i>`).join("");
+  const keys = ["1","2","3","4","5","6","7","8","9"]
+    .map(k=>`<button data-key="${k}">${k}</button>`).join("");
+  return `<div class="login-wrap"><div class="login-card">
+      <div class="lg-shop">${esc(state.shopName || "店舗管理")}</div>
+      <div class="lg-sub">PINを入力してください</div>
+      <div class="pindots">${dots}</div>
+      <div class="pinerr">${esc(state.pinErr)}</div>
+      <div class="keypad">
+        ${keys}
+        <button class="fn" data-key="clr">全消去</button>
+        <button data-key="0">0</button>
+        <button class="fn" data-key="del">←</button>
+      </div>
+      <div class="login-hint">
+        ${state.accounts.map(a=>`<b>${esc(a.name)}</b>（${ROLES[a.role].label}）… ${esc(a.pin)}`).join("<br>")}
+      </div>
+    </div></div>`;
+}
+
+/* ---- tables ---- */
+function viewTables(){
+  const counts = {}; ORDER.forEach(k=>counts[k]=0);
+  state.tables.forEach(t=>counts[t.status]++);
+  const chips = [`<button class="chip" data-filter="all" aria-pressed="${state.filter==="all"}">
+      <span class="n">${state.tables.length}</span> すべて</button>`]
+    .concat(ORDER.map(k=>`<button class="chip ${S[k].cls}" data-filter="${k}" aria-pressed="${state.filter===k}">
+      <span class="dot"></span><span class="n">${counts[k]}</span> ${S[k].label}</button>`)).join("");
+
+  const list = state.tables.filter(t=>state.filter==="all" || t.status===state.filter);
+  const cards = list.map(t=>{
+    const r = rotOf(t.id);
+    let timer = "";
+    if(t.status==="serving" && t.seatedAt) timer = `<span class="t" data-tick="up:${t.seatedAt}"></span> 滞在`;
+    else if(t.status==="billing") timer = `<span class="t" data-tick="up:${t.statusSince}"></span> 会計待ち`;
+    else if(t.status==="closed") timer = `<span class="t" data-tick="up:${t.statusSince}"></span> 片付け`;
+    const badge = (r && !r.done)
+      ? `<div class="fbadge">初回 ${esc(rounds(r)[r.index].map(castName).join("／"))}
+           <span class="t" data-tick="rot:${r.id}"></span></div>` : "";
+    return `<button class="card s-${t.status}" data-table="${t.id}">
+      <div class="row1"><div class="name">${esc(t.name)}</div><div class="stat">${S[t.status].label}</div></div>
+      ${badge}
+      ${(t.casts&&t.casts.length)?`<div class="tcasts">${esc(t.casts.map(castName).join("・"))}</div>`:""}
+      <div class="meta">${t.guests>0?`<span>${t.guests}名</span>`:""}${timer?`<span>${timer}</span>`:""}${
+        billTotal(t)>0?`<span class="amt">${yen(billTotal(t))}</span>`:""}</div>
+    </button>`;
+  }).join("");
+
+  return `<div class="summary">${chips}</div>
+    ${list.length ? `<div class="grid">${cards}</div>`
+                  : `<div class="empty">該当するテーブルはありません。</div>`}`;
+}
+
+/* ---- first rotation ---- */
+function viewFirst(){
+  const act = state.rotations.filter(r=>!r.closed);
+  const body = act.length ? act.map(rotCard).join("")
+    : `<div class="empty">進行中の初回はありません。<br>下のボタンから開始できます。</div>`;
+  return `<div class="sec-head"><h2>進行中の初回</h2><div class="rule"></div></div>
+    ${body}
+    <button class="add" data-new-rot="1">＋ 新しい初回を始める</button>`;
+}
+
+function rotCard(r){
+  const t = tableOf(r.tableId);
+  const rs = rounds(r);
+  const cur = rs[r.index] || [];
+  const nxt = rs[r.index+1];
+  const over = !r.done && remain(r) < 0;
+
+  const track = rs.map((_,i)=>`<div class="seg ${i<r.index?"done":""} ${i===r.index&&over?"over":""}">
+      ${i===r.index?`<div class="fill" data-prog="${r.id}"></div>`:i<r.index?`<div class="fill" style="width:100%"></div>`:""}
+    </div>`).join("");
+
+  let acc = r.startedAt;
+  const lines = rs.map((g,i)=>{
+    const at = hhmm(acc); acc += limitMs(r);
+    const cls = i===r.index ? "cur" : (i<r.index ? "past" : "");
+    return `<div class="rot-line ${cls}"><span class="no">${i+1}</span>
+      <span class="names">${esc(g.map(castName).join("　／　"))}</span>
+      <span class="clock">${at}〜</span></div>`;
+  }).join("");
+
+  const head = `<div class="rot-top">
+      <span class="tbl">${esc(t?t.name:"—")}</span><span class="sep">|</span>
+      <span>${r.guests}名</span><span class="sep">|</span>
+      <span>1組 ${r.minutes}分</span><span class="sep">|</span>
+      <span>同時 ${r.perRound}名</span><span class="sep">|</span>
+      <span>全${rs.length}組</span>
+    </div>`;
+
+  if(r.done){
+    return `<div class="rot"><div>${head}</div>
+      <div class="rot-now"><div class="rot-cast"><div class="lb">ステータス</div>
+        <div class="nm" style="font-size:26px">回し終了</div></div></div>
+      <div class="track">${track}</div>
+      <div class="rot-acts">
+        <button class="btn pri" data-close-rot="${r.id}">閉じる</button>
+        <button class="btn gh" data-restart-rot="${r.id}">もう一周する</button>
+      </div>
+      <div class="rot-list">${lines}</div></div>`;
+  }
+
+  const soon = !over && remain(r) <= SOON_MS;
+  return `<div class="rot ${over?"over":""} ${soon?"soon":""}">
+    ${head}
+    <div class="rot-now">
+      <div class="rot-cast"><div class="lb">${r.runningSince?"接客中":"一時停止中"}</div>
+        <div class="nm">${esc(cur.map(castName).join(" ／ "))}</div></div>
+      <div class="rot-time"><div class="lb">${over?"時間超過":"残り"}</div>
+        <div class="tm ${over?"over":""}" data-tick="rot:${r.id}"></div></div>
+    </div>
+    <div class="track">${track}</div>
+    <div class="rot-next">${soon?`<span style="color:var(--st-billing);font-weight:700">まもなく交代 ・ </span>`:""}次 ${
+      r.index+2>rs.length?"— なし（最終組）":`<b>${esc((nxt||[]).map(castName).join(" ／ "))}</b>`}</div>
+    <div class="rot-acts">
+      <button class="btn pri" data-next-rot="${r.id}">次の組へ</button>
+      <button class="btn" data-pause-rot="${r.id}">${r.runningSince?"一時停止":"再開"}</button>
+      <button class="btn gh" data-extend-rot="${r.id}">＋1分</button>
+      <button class="btn dan" data-close-rot="${r.id}">終了</button>
+    </div>
+    <div class="rot-list">${lines}</div>
+  </div>`;
+}
+
+/* ---- 交代1分前のお知らせ（ホール・管理者の全画面に出す） ---- */
+const SOON_MS = 60000;
+function soonRotations(){
+  return state.rotations.filter(r=>{
+    if(r.closed || r.done || !r.runningSince) return false;
+    const rem = remain(r);
+    return rem <= SOON_MS;
+  });
+}
+function alertBar(){
+  if(!can("manage")) return "";
+  const rs = soonRotations();
+  if(!rs.length) return "";
+  return rs.map(r=>{
+    const t = tableOf(r.tableId);
+    const nx = rounds(r)[r.index + 1];
+    const over = remain(r) < 0;
+    return `<div class="alert"><span class="ai"></span>
+      <div><b>${esc(t ? t.name : "—")}卓</b> ${over ? "交代時間を過ぎています" : "まもなく交代"}
+        ${nx ? `／ 次は <b>${esc(nx.map(castName).join("・"))}</b>` : "／ これが最終組です"}</div>
+      <span class="t" data-tick="rot:${r.id}"></span></div>`;
+  }).join("");
+}
+
+/* ---- 厨房：オーダー通知 ---- */
+const seenBatches = new Set();
+function viewKitchen(){
+  const feed = kitchenFeed();
+  const pend = feed.filter(x=>!x.b.done);
+  const done = feed.filter(x=>x.b.done).slice(0,12);
+
+  const card = (x, isDone) => {
+    const fresh = !seenBatches.has(x.b.id);
+    if(!isDone) seenBatches.add(x.b.id);
+    return `<div class="korder ${isDone?"done":"new"} ${fresh&&!isDone?"in":""}">
+      <div class="kh">
+        <span class="kt">${esc(x.t.name)}</span>
+        <span class="km">${hhmm(x.b.at)}${x.b.manual?" ・ スタッフ入力":""}</span>
+        <span class="ka">${yen(batchSum(x.b))}</span></div>
+      ${x.b.lines.map(l=>`<div class="kl">
+        <span class="n">${esc(l.name)}</span>
+        <span class="q">×${l.qty}</span></div>`).join("")}
+      ${isDone ? `<button class="btn gh sm" data-kundo="${x.b.id}">未提供に戻す</button>`
+               : `<button class="btn pri" data-kdone="${x.b.id}">提供済みにする</button>`}
+    </div>`;
+  };
+
+  return `<div class="sec-head" style="margin-top:0">
+      <h2>未提供 ${pend.length ? `<span class="nbadge live">${pend.length}</span>` : ""}</h2>
+      <div class="rule"></div></div>
+    ${pend.length ? pend.map(x=>card(x,false)).join("")
+                  : `<div class="empty">新しいオーダーはありません。</div>`}
+    ${done.length ? `<div class="sec-head"><h2>提供済み</h2><div class="rule"></div></div>
+      ${done.map(x=>card(x,true)).join("")}` : ""}`;
+}
+
+/* ---- 在庫（厨房・管理者） ---- */
+function stockList(){
+  const groups = prodGroups();
+  if(!state.products.length) return `<div class="empty">商品が登録されていません。</div>`;
+  return groups.map(([c,ps])=>{
+    if(!ps.length) return "";
+    const open = !!state.openCats["stk:"+c];
+    return `<div class="grp">
+      <button class="grph" data-cat="stk:${esc(c)}" aria-expanded="${open}">
+        ${esc(c)}<b>${ps.filter(p=>soldOut(p)).length?`停止 ${ps.filter(p=>soldOut(p)).length} / `:""}${ps.length}</b>
+        <span class="ar">${open?"▲":"▼"}</span></button>
+      ${open ? `<div class="grpb">${ps.map(p=>`<div class="strow ${soldOut(p)?"out":""}">
+          <div class="sname">${esc(p.name)}<small>${yen(p.price)}</small>${
+            stockLabel(p)?`<em>${stockLabel(p)}</em>`:""}</div>
+          <div class="sctl">
+            <button class="tog" data-ptrack="${p.id}" aria-pressed="${p.track}">在庫管理${p.track?"する":"しない"}</button>
+            ${p.track ? `<span class="slab">在庫</span>
+              <button class="sq" data-pstock="${p.id}:-1">−</button>
+              <input class="stk" type="number" inputmode="numeric" min="0" value="${p.stock}" data-pstocknum="${p.id}">
+              <button class="sq" data-pstock="${p.id}:1">＋</button>` : ""}
+            <button class="tog warn" data-psold="${p.id}" aria-pressed="${p.soldout}">${p.soldout?"品切れ":"提供中"}</button>
+          </div></div>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+function viewStock(){
+  return `<div class="sec-head" style="margin-top:0"><h2>在庫</h2><div class="rule"></div></div>
+    ${stockList()}
+    <p class="note">「在庫管理する」にした商品だけ在庫の数が出ます。注文が確定するたびに減り、0になると自動で<b style="color:var(--danger)">欠品</b>と表示されて注文端末で選べなくなります。「品切れ」は在庫に関係なく手で止めるときに使います。</p>`;
+}
+
+/* ---- order terminal（注文専用・卓固定） ---- */
+function feeBlock(t){
+  const ls = feeLines(t);
+  if(!ls.length) return "";
+  return `<div class="hbatch">
+      <div class="hh">料金${t.seatedAt?`（${hhmm(t.seatedAt)} 入店）`:""}
+        <span class="amt">${yen(feeTotal(t))}</span></div>
+      ${ls.map(l=>`<div class="hline">
+        <span class="n">${l.name}</span>
+        <span class="q">${l.note || ""}</span>
+        <span class="a">${yen(l.amount)}</span></div>`).join("")}
+    </div>`;
+}
+
+function historyBlocks(tid){
+  const bs = batchesOf(tid);
+  if(!bs.length) return `<div class="empty">まだ注文はありません。</div>`;
+  return bs.slice().reverse().map(b=>`<div class="hbatch">
+      <div class="hh">${b.manual ? "スタッフ入力" : hhmm(b.at) + " の注文"}
+        <span class="amt">${yen(batchSum(b))}</span></div>
+      ${b.lines.map(l=>`<div class="hline">
+        <span class="n">${esc(l.name)}</span>
+        <span class="q">×${l.qty}</span>
+        <span class="a">${yen(l.price*l.qty)}</span></div>`).join("")}
+    </div>`).join("");
+}
+
+function viewTerminal(){
+  const gear = `<div class="gearrow"><button class="gear" data-dev="1" aria-label="卓番の設定">⚙</button></div>`;
+
+  if(state.deviceTable && !tableOf(state.deviceTable)) state.deviceTable = null;
+  const t = state.deviceTable ? tableOf(state.deviceTable) : null;
+
+  /* 未設定：この端末の卓番を決める */
+  if(!t) return gear + `<div class="term-idle"><div>
+      <div class="ti-lb">SETUP</div>
+      <div class="ti-no">—</div>
+      <div class="ti-note">この端末の卓番が設定されていません。</div>
+      <div style="margin-top:24px"><button class="btn pri big" data-dev="1">卓番を設定する</button></div>
+    </div></div>`;
+
+  const tid = t.id;
+  const tot = billTotal(t);      // 料金＋注文の合計
+
+  /* 会計待ち：この画面だけ表示 */
+  if(t.status === "billing"){
+    return `<div class="term-idle"><div>
+        <div class="ti-lb">TABLE ${esc(t.name)}</div>
+        <div class="ti-no" style="font-size:clamp(32px,7.5vw,54px);margin-top:12px">会計待ち</div>
+        <div class="ti-note">合計 <b>${yen(tot)}</b></div>
+        <div class="ti-note" style="margin-top:4px">スタッフがお伺いします</div>
+        <div style="margin-top:28px"><button class="btn gh" data-tcancel="${tid}">会計をキャンセルする</button></div>
+      </div></div>`;
+  }
+
+  /* 会計完了：お礼画面（バッシング完了は下の透明エリアをタップ） */
+  if(t.status === "closed"){
+    return `<div class="term-idle"><div>
+        <div class="ti-lb">TABLE ${esc(t.name)}</div>
+        <div class="thanks">本日ご来店いただき<br>誠にありがとうございました</div>
+        <div class="ti-note">合計 <b>${yen(tot)}</b></div>
+        <button class="ghosthit" data-tbus="${tid}" aria-label="バッシング完了"></button>
+      </div></div>`;
+  }
+
+  /* 待機画面 */
+  if(state.term.stage === "idle"){
+    return gear + `<button class="term-idle" data-tstart="1"><div>
+        <div class="ti-lb">TABLE</div><div class="ti-no">${esc(t.name)}</div>
+        <div class="ti-cta live">タップで注文を開始する</div>
+        ${t.status==="serving" ? `<div class="ti-note">${hhmm(t.seatedAt)} 入店 ・ 現在の合計 <b>${yen(tot)}</b>${
+          isFreeTime(t)?" ・ フリータイム":""}</div>` : ""}
+      </div></button>`;
+  }
+
+  const head = `<div class="term-head">
+      <div><div class="th-no">${esc(t.name)}</div><div class="th-st">${S[t.status].label}</div></div>
+      <div class="th-tot">${yen(tot)}</div>
+      <button class="gear" data-dev="1" aria-label="卓番の設定">⚙</button>
+      <button class="btn sm gh" data-thome="1">ホーム</button>
+    </div>`;
+
+  let body = "";
+  if(state.term.tab === "menu"){
+    const gs = prodGroups();
+    body = gs.length
+      ? `<div class="mlist">${gs.map(([c,ps])=>
+          `<div class="mcat">${esc(c)}</div>` + ps.map(p=>{
+            const q = (cartOf(tid).find(l=>l.productId===p.id)||{}).qty || 0;
+            const so = soldOut(p);
+            return `<div class="mrow ${q?"on":""} ${so?"sold":""}">
+              <button class="mtap" data-cadd="${tid}:${p.id}" ${so?"disabled":""}>
+                <span class="mn">${esc(p.name)}${so?`<em>${stockLabel(p)}</em>`:""}</span>
+                <span class="mp">${yen(p.price)}</span></button>
+              ${q ? `<div class="mq">
+                  <button data-cqty="${tid}:${p.id}:-1">−</button><span>${q}</span>
+                  <button data-cqty="${tid}:${p.id}:1">＋</button></div>` : ""}
+            </div>`;
+          }).join("")).join("")}</div>`
+      : `<div class="empty">商品が登録されていません。</div>`;
+  }
+  else if(state.term.tab === "cart"){
+    const c = cartOf(tid);
+    body = c.length
+      ? `<div class="slip">${c.map(l=>`<div class="srow">
+            <div class="sn">${esc(l.name)}<span>${yen(l.price)}</span></div>
+            <div class="sqc">
+              <button data-cqty="${tid}:${l.productId}:-1">−</button>
+              <span class="q">${l.qty}</span>
+              <button data-cqty="${tid}:${l.productId}:1">＋</button></div>
+            <div class="ss">${yen(l.price*l.qty)}</div></div>`).join("")}
+          <div class="stotal"><span>この注文の合計</span><b>${yen(cartTotal(tid))}</b></div>
+        </div>
+        <button class="btn gh wide" style="margin-top:10px" data-cclear="${tid}">カートを空にする</button>`
+      : `<div class="empty">カートは空です。<br>メニューから商品を選んでください。</div>`;
+  }
+  else {
+    const bill = tot > 0
+      ? `<div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line)">
+           <button class="btn warn big wide" data-tbill="${tid}">会計</button>
+           <p class="note">押すと注文を締め切り、スタッフに会計待ちとして通知されます。</p></div>`
+      : "";
+    body = `<div class="gtotal"><span>合計金額</span><b>${yen(tot)}</b></div>
+      ${feeBlock(t)}${historyBlocks(tid)}
+      <div class="slip" style="margin-top:10px">${totalsBlock(t)}</div>${bill}`;
+  }
+
+  const cc = cartCount(tid);
+  const foot = `<div class="termfoot">
+      ${cc ? `<div class="confirmbar">
+          <div class="cb"><b>${yen(cartTotal(tid))}</b><span>${cc}点</span></div>
+          <button class="btn pri" data-confirm="${tid}">注文を確定する</button>
+        </div>` : ""}
+      <div class="termnav">
+        <button data-ttab="menu"    aria-selected="${state.term.tab==="menu"}">メニュー</button>
+        <button data-ttab="cart"    aria-selected="${state.term.tab==="cart"}">カート
+          <span class="sub">${cc ? cc+"点" : "—"}</span></button>
+        <button data-ttab="history" aria-selected="${state.term.tab==="history"}">注文履歴
+          <span class="sub">${yen(tot)}</span></button>
+      </div>
+    </div>`;
+
+  return head + body + foot;
+}
+
+/* ---- order（ホール・管理者：卓を切り替えて入力） ---- */
+function viewOrder(){
+  const strip = state.tables.map(x=>{
+    const tot = billTotal(x);
+    return `<button class="tchip s-${x.status}" data-otab="${x.id}" aria-pressed="${x.id===state.orderTable}">
+      <div class="tn">${esc(x.name)}</div>
+      <div class="tm ${tot?"amt":""}">${tot?yen(tot):S[x.status].label}</div></button>`;
+  }).join("");
+  const stripHtml = state.tables.length
+    ? `<div class="tstrip">${strip}</div>`
+    : `<div class="empty">テーブルが登録されていません。</div>`;
+
+  const t = state.orderTable ? tableOf(state.orderTable) : null;
+  if(!t) return stripHtml + `<div class="empty">上から卓を選ぶと注文できます。</div>`;
+
+  const tid = t.id;
+  const bs = batchesOf(tid);
+  const total = billTotal(t);             // 料金＋注文
+  const locked = t.status === "closed";   // 会計完了後は閲覧のみ
+
+  const qtyOf = pid => allLines(tid).filter(l=>l.productId===pid).reduce((s,l)=>s+l.qty,0);
+  const prods = state.products.length
+    ? state.products.map(p=>{
+        const q = qtyOf(p.id);
+        return `<button class="pcard" data-add="${tid}:${p.id}" ${locked?"disabled":""}>
+          ${q?`<span class="q">${q}</span>`:""}
+          <span class="pn">${esc(p.name)}</span>
+          <span class="pp">${yen(p.price)}</span></button>`;
+      }).join("")
+    : `<div class="empty">商品が登録されていません。設定タブから追加してください。</div>`;
+
+  const fl = feeLines(t);
+  const feeRows = fl.length
+    ? `<div class="bhead first">料金${t.seatedAt?`（${hhmm(t.seatedAt)} 入店）`:""}
+          <span>${yen(feeTotal(t))}</span></div>
+       ${fl.map(l=>`<div class="srow">
+          <div class="sn">${l.name}<span>${l.note||""}</span></div>
+          <div class="ss">${yen(l.amount)}</div></div>`).join("")}`
+    : "";
+
+  const rows = bs.length
+    ? bs.map((b,i)=>`<div class="bhead ${(i===0&&!fl.length)?"first":""}">${b.manual?"スタッフ入力":hhmm(b.at)+" の注文"}
+          <span>${yen(batchSum(b))}</span></div>
+        ${b.lines.map(l=>`<div class="srow">
+          <div class="sn">${esc(l.name)}<span>${yen(l.price)}</span></div>
+          ${locked ? `<div class="sq">×${l.qty}</div>`
+                   : `<div class="sqc">
+                        <button data-qty="${tid}:${l.id}:-1">−</button>
+                        <span class="q">${l.qty}</span>
+                        <button data-qty="${tid}:${l.id}:1">＋</button></div>`}
+          <div class="ss">${yen(l.price*l.qty)}</div></div>`).join("")}`).join("")
+    : (fl.length ? "" : `<div class="empty" style="margin:0">まだ注文がありません。<br>商品をタップすると伝票に入ります。</div>`);
+
+  let act = "";
+  if(t.status==="serving")      act = `<button class="btn warn" data-go="${tid}:billing">会計</button>`;
+  else if(t.status==="billing") act = can("manage")
+        ? `<button class="btn pri" data-go="${tid}:closed">会計完了</button>`
+        : `<p class="note" style="margin:0">会計待ちです。会計完了はホール・管理者が行います。</p>`;
+  else if(t.status==="closed")  act = can("manage")
+        ? `<button class="btn pri" data-go="${tid}:empty">バッシング完了</button>`
+        : `<p class="note" style="margin:0">会計済みです。バッシング完了はホール・管理者が行います。</p>`;
+  else act = `<p class="note" style="margin:0">商品をタップすると接客中になります。</p>`;
+
+  return `${stripHtml}
+    <div class="orderbar">
+      <div class="obt">${esc(t.name)}<span>${S[t.status].label}${t.guests?` ・ ${t.guests}名`:""}</span></div>
+      <div class="obtotal">${yen(total)}</div>
+    </div>
+    <div class="owrap">
+      <div><div class="pgrid">${prods}</div></div>
+      <aside class="slip">
+        <div class="sec-head" style="margin-top:0"><h2>伝票 ${bs.length?`（${orderCount(tid)}点）`:""}</h2><div class="rule"></div></div>
+        ${feeRows}${rows}
+        ${totalsBlock(t)}
+        <div class="sact">${act}</div>
+      </aside>
+    </div>`;
+}
+
+/* ---- settings ---- */
+function viewSettings(){
+  const tbl = state.tables.map((t,i)=>`<div class="setrow"><span class="no">${i+1}</span>
+    <input class="inp" value="${esc(t.name)}" data-tname="${t.id}" placeholder="卓名">
+    <button class="del" data-deltable="${t.id}" aria-label="削除">✕</button></div>`).join("");
+
+  const cst = state.casts.map(c=>`<div class="setrow">
+    <input class="inp" value="${esc(c.name)}" data-cname="${c.id}" placeholder="キャスト名">
+    <button class="tog" data-ctog="${c.id}" aria-pressed="${c.active}">${c.active?"出勤":"退勤"}</button>
+    <button class="del" data-delcast="${c.id}" aria-label="削除">✕</button></div>`).join("");
+
+  const catRows = state.categories.map((c,i)=>`<div class="setrow">
+    <span class="no">${i+1}</span>
+    <input class="inp" value="${esc(c)}" data-catname="${i}" placeholder="ジャンル名">
+    <button class="del" data-catdel="${i}" aria-label="削除">✕</button></div>`).join("");
+
+  /* ジャンルごとに折りたたむ。閉じているときはタイトルと件数だけ */
+  const prd = prodGroups().map(([c,ps])=>{
+    const open = !!state.openCats[c];
+    return `<div class="grp">
+      <button class="grph" data-cat="${esc(c)}" aria-expanded="${open}">
+        ${esc(c)}<b>${ps.length}</b><span class="ar">${open?"▲":"▼"}</span></button>
+      ${open ? `<div class="grpb">${ps.map((p,i)=>`<div class="prow">
+          <input class="inp nm" value="${esc(p.name)}" data-pname="${p.id}" placeholder="商品名">
+          <div class="prow-b">
+            <span class="yen">¥</span>
+            <input class="inp pr" type="number" inputmode="numeric" min="0" step="100"
+                   value="${p.price}" data-pprice="${p.id}">
+            <select class="inp rl" data-pcat="${p.id}">
+              ${state.categories.map(x=>`<option value="${esc(x)}" ${p.cat===x?"selected":""}>${esc(x)}</option>`).join("")}
+            </select>
+            <button data-pmv="${p.id}:-1" ${i===0?"disabled":""} aria-label="上へ">↑</button>
+            <button data-pmv="${p.id}:1" ${i===ps.length-1?"disabled":""} aria-label="下へ">↓</button>
+            <button data-pdel="${p.id}" aria-label="削除">✕</button>
+          </div></div>`).join("")}
+        <button class="add sm" data-addprod="${esc(c)}">＋ ${esc(c)} に商品を追加</button></div>` : ""}
+    </div>`;
+  }).join("");
+
+  const acs = state.accounts.map(a=>`<div class="prow">
+    <input class="inp nm" value="${esc(a.name)}" data-aname="${a.id}" placeholder="表示名">
+    <div class="prow-b">
+      <select class="inp rl" data-arole="${a.id}">
+        ${Object.keys(ROLES).map(r=>`<option value="${r}" ${a.role===r?"selected":""}>${ROLES[r].label}</option>`).join("")}
+      </select>
+      <input class="inp pin" inputmode="numeric" maxlength="4" value="${esc(a.pin)}" data-apin="${a.id}">
+      <button data-adel="${a.id}" aria-label="削除">✕</button>
+    </div></div>`).join("");
+
+  const feeRow = (key,label,note) => `<div class="prow">
+    <span class="flab">${label}${note?`<small>${note}</small>`:""}</span>
+    <div class="prow-b"><span class="yen">¥</span>
+      <input class="inp pr" type="number" inputmode="numeric" min="0" step="500"
+             value="${state.fees[key]}" data-fee="${key}"></div></div>`;
+
+  /* ▼で表示量を増やし、▲で減らすセクション */
+  const sec = (key, title, meta, inner) => {
+    const open = !!state.openSecs[key];
+    return `<div class="sect">
+      <button class="secth" data-sec="${key}" aria-expanded="${open}">
+        <span class="stt">${title}</span>${meta?`<span class="smeta">${meta}</span>`:""}
+        <span class="sar">${open?"▲":"▼"}</span></button>
+      ${open?`<div class="sectb">${inner}</div>`:""}</div>`;
+  };
+
+  return `
+  ${sec("shop","店舗", esc(state.shopName), `
+    <div class="field"><label>店名</label>
+      <input class="inp" id="setShop" value="${esc(state.shopName)}" placeholder="店名"></div>
+    <div class="flow">
+      <b class="d-empty">空席</b><i>─ 接客開始 →</i>
+      <b class="d-serving">接客中</b><i>─ 会計 →</i>
+      <b class="d-billing">会計待ち</b><i>─ 会計完了 →</i>
+      <b class="d-closed">使用不可</b><i>─ バッシング完了 →</i>
+      <b class="d-empty">空席</b>
+    </div>
+    <p class="note">卓をタップすると、いま押せるボタンだけが出ます。押し間違えたときは各画面の小さいボタンで1つ前に戻せます。</p>`)}
+
+  ${sec("tables","テーブル", state.tables.length+"卓", `
+    <div class="stepper">
+      <button data-tcount="-1">−</button>
+      <div class="val">${state.tables.length}<small>卓</small></div>
+      <button data-tcount="1">＋</button>
+    </div>
+    <div class="quick" style="margin-top:10px">
+      ${[6,10,14,15,20,30].map(n=>`<button data-tset="${n}" aria-pressed="${state.tables.length===n}">${n}卓</button>`).join("")}
+    </div>
+    <p class="note">増やすと末尾に追加、減らすと末尾から削除します。使用中の卓は削除できません。</p>
+    <div style="margin-top:12px">${tbl}</div>`)}
+
+  ${sec("accounts","アカウントと権限", state.accounts.length+"件", `
+    ${acs}
+    <button class="add" data-addacct="1" style="margin-top:8px">＋ アカウントを追加</button>
+    <div class="flow" style="margin-top:10px">
+      <b style="color:var(--gold)">注文専用</b><i>注文と会計依頼、バッシング完了。卓番は端末側で設定</i><br>
+      <b style="color:var(--gold)">厨房</b><i>オーダー通知と在庫のみ</i><br>
+      <b style="color:var(--gold)">ホール</b><i>テーブル・注文・初回回し・会計完了</i><br>
+      <b style="color:var(--gold)">管理者</b><i>テーブル・初回回し・厨房・設定。注文の入力はできません（伝票は確認のみ）</i>
+    </div>
+    <p class="note">PINは4桁。他のアカウントと重複しない番号にしてください。注文端末の卓番は各タブレットの歯車から、管理者PINを入れて設定します。</p>`)}
+
+  ${sec("fees","料金", yen(state.fees.setBase)+"〜", `
+    ${feeRow("setBase","セット料金（基本）","入店時に自動でつきます")}
+    ${feeRow("setStep","延長（1時間ごと）","1時間経過するごとに加算")}
+    ${feeRow("setCap","フリータイム上限","ここに達したら以降は増えません")}
+    ${feeRow("nom","指名料","入店時に自動でつきます")}
+    ${feeRow("douhan","同伴料","ホール・管理者が卓ごとにオンにします")}
+    ${feeRow("first","初回料金","初回回しの開始時に この額か ¥0 を選びます")}
+    <div class="prow">
+      <span class="flab">サービス料<small>小計にかかります</small></span>
+      <div class="prow-b">
+        <button class="tog" data-feeon="serviceOn" aria-pressed="${state.fees.serviceOn}">${state.fees.serviceOn?"あり":"なし"}</button>
+        <input class="inp pr" type="number" inputmode="numeric" min="0" max="100" step="1"
+               value="${state.fees.service}" data-fee="service"><span class="yen">％</span></div></div>
+    <div class="prow">
+      <span class="flab">消費税<small>小計＋サービス料にかかります</small></span>
+      <div class="prow-b">
+        <button class="tog" data-feeon="taxOn" aria-pressed="${state.fees.taxOn}">${state.fees.taxOn?"あり":"なし"}</button>
+        <input class="inp pr" type="number" inputmode="numeric" min="0" max="100" step="1"
+               value="${state.fees.tax}" data-fee="tax"><span class="yen">％</span></div></div>
+    <p class="note">入店〜1時間 ${yen(state.fees.setBase)} ／ ${
+      Math.max(1, Math.ceil((state.fees.setCap-state.fees.setBase)/Math.max(1,state.fees.setStep)))}時間経過で ${yen(state.fees.setCap)}（フリータイム）。会計を押した時点でセット料金は止まります。</p>`)}
+
+  ${sec("genres","ジャンル", state.categories.length+"件", `
+    ${catRows}
+    <div class="setrow">
+      <input class="inp" value="${esc(newCat)}" data-newcat="1" placeholder="新しいジャンル名">
+      <button class="tog" data-catadd="1">追加</button>
+    </div>
+    <p class="note">ジャンルの並び順が、そのまま注文端末のメニューの並びになります。</p>`)}
+
+  ${sec("products","商品", state.products.length+"件", `
+    ${prd || `<div class="empty">商品が登録されていません。</div>`}
+    <p class="note">ジャンル名を押すと中身を開閉できます。↑↓の並べ替えはそのジャンルの中で動きます。売値を変えても、すでに入っている伝票の金額は注文時のまま変わりません。</p>`)}
+
+  ${sec("stock","在庫", state.products.filter(p=>soldOut(p)).length ? "品切れ "+state.products.filter(p=>soldOut(p)).length+"件" : "—", `
+    ${stockList()}
+    <p class="note">「在庫管理する」にした商品だけ在庫の数が出ます。0になると自動で欠品になります。</p>`)}
+
+  ${sec("casts","キャスト", state.casts.filter(c=>c.active).length+"／"+state.casts.length+"人 出勤", `
+    ${cst || `<div class="empty">キャストが登録されていません。</div>`}
+    <button class="add" data-addcast="1" style="margin-top:8px">＋ キャストを追加</button>
+    <div class="sec-head"><h2>初回回しの既定値</h2><div class="rule"></div></div>
+    <div class="stepper">
+      <button data-dmin="-1">−</button>
+      <div class="val">${state.defaultMin}<small>分／組</small></div>
+      <button data-dmin="1">＋</button>
+    </div>`)}
+
+  ${sec("terminal","注文端末", state.idleSec+"秒", `
+    <div class="stepper">
+      <button data-idle="-10">−</button>
+      <div class="val">${state.idleSec}<small>秒で待機画面へ</small></div>
+      <button data-idle="10">＋</button>
+    </div>
+    <p class="note">注文端末が操作されないままこの時間が過ぎると、自動で待機画面に戻ります。注文を確定しても画面は戻りません。</p>`)}
+
+  ${sec("data","連携とデータ", syncOn()?"同期中":"—", `
+    <div class="sync ${syncOn()?"":"off"}"><span class="dot"></span>
+      ${syncOn()
+        ? "同じブラウザで開いている他のタブ・ウィンドウとリアルタイムに同期しています。"
+        : "この環境では他タブとの同期が使えません。"}</div>
+    <div class="sync ${PERSIST?"":"off"}"><span class="dot"></span>
+      ${PERSIST ? "この端末のブラウザに保存しています。再読み込みしても残ります。"
+                : "保存は無効です。ファイル冒頭の PERSIST を true にすると再読み込み後も残ります。"}</div>
+    <p class="note">別々のタブレット同士をつなぐにはサーバーが必要です。ファイル内の <b>send</b> と <b>chan.onmessage</b> の2か所を WebSocket に差し替えれば、そのまま端末をまたいで同期します。</p>
+    <button class="btn dan wide" style="margin-top:10px" data-reset="1">すべてリセット</button>`)}
+  `;
+}
+
+function openSheet(html){
+  $("#sheetHost").innerHTML = `<div class="sheet" data-sheet="1"><div class="panel">${html}</div></div>`;
+}
+function closeSheet(){ pendingAction = null; $("#sheetHost").innerHTML = ""; }
+
+/* アプリ内の確認画面（webviewでは confirm() がブロックされるため自前で用意） */
+let pendingAction = null;
+function askConfirm(o){
+  pendingAction = o.run;
+  openSheet(`<h3>${esc(o.title)}</h3>
+    <p class="note" style="margin:0 0 18px;font-size:13.5px">${o.msg}</p>
+    <button class="btn ${o.danger?"dan":"pri"} big wide" data-okconfirm="1">${esc(o.ok)}</button>
+    <div class="sheet-acts"><button class="btn gh" data-closesheet="1">やめる</button></div>`);
+}
+
+function sheetTable(id){
+  const t = tableOf(id); if(!t) return;
+  const r = rotOf(t.id);
+  const rotActive = r && !r.done;
+
+  const stepper = `<div class="field"><label>人数</label>
+      <div class="stepper">
+        <button data-guest="${t.id}:-1">−</button>
+        <div class="val">${t.guests}<small>名</small></div>
+        <button data-guest="${t.id}:1">＋</button>
+      </div></div>`;
+  const rotField = `<div class="field"><label>初回回し</label>${ rotActive
+      ? `<button class="btn wide" data-goto-rot="1">進行中 — ${esc(rounds(r)[r.index].map(castName).join("／"))} を表示</button>`
+      : `<button class="btn wide" data-new-rot="${t.id}">この卓で初回を始める</button>`}</div>`;
+
+  const orderField = `<div class="field"><label>伝票</label>
+      <button class="btn wide" data-order="${t.id}">${
+        (can("order") && t.status!=="closed") ? "注文・伝票" : "伝票を見る"}　${yen(billTotal(t))}</button></div>`;
+
+  const act = state.casts.filter(c=>c.active);
+  const castField = `<div class="field"><label>担当キャスト${
+      (t.casts&&t.casts.length)?`（${t.casts.length}人）`:""}</label>
+    ${act.length ? `<div class="castpick">${act.map(c=>{
+        const on = (t.casts||[]).includes(c.id);
+        return `<button data-tcast="${t.id}:${c.id}" aria-pressed="${on}">${esc(c.name)}</button>`;
+      }).join("")}</div>`
+    : `<p class="note" style="margin:0">出勤中のキャストがいません。設定から登録してください。</p>`}</div>`;
+
+  const feeField = t.seatedAt ? `<div class="field"><label>料金</label>
+      <div class="feegrid">
+        ${(t.firstFee !== null && t.firstFee !== undefined) ? `<button class="feebtn" data-firstoff="${t.id}" aria-pressed="true">
+          <span class="ck">✓</span>初回料金 <span class="sub">押すと解除</span><b>${yen(t.firstFee)}</b></button>` : ""}
+        <button class="feebtn" data-feetog="${t.id}:set" aria-pressed="${t.fees.set}">
+          <span class="ck">✓</span>セット料金 <span class="sub">${isFreeTime(t)?"フリータイム":(stayHours(t)?stayHours(t)+"時間経過":"1時間以内")}</span>
+          <b>${yen(setFee(t))}</b></button>
+        <button class="feebtn" data-feetog="${t.id}:nom" aria-pressed="${t.fees.nom}">
+          <span class="ck">✓</span>指名料 <b>${yen(state.fees.nom)}</b></button>
+        <button class="feebtn" data-feetog="${t.id}:douhan" aria-pressed="${t.fees.douhan}">
+          <span class="ck">✓</span>同伴料 <b>${yen(state.fees.douhan)}</b></button>
+      </div></div>` : "";
+
+  let extra = "", main = "", back = "";
+  if(t.status === "empty"){
+    extra = stepper + rotField;
+    main  = `<button class="btn pri big wide" data-go="${t.id}:serving">接客開始</button>`;
+  } else if(t.status === "serving"){
+    extra = stepper + castField + feeField + orderField + rotField;
+    main  = `<button class="btn warn big wide" data-go="${t.id}:billing">会計</button>`;
+    back  = `<button class="btn gh sm" data-go="${t.id}:empty">空席に戻す</button>`;
+  } else if(t.status === "billing"){
+    extra = castField + feeField + orderField;
+    main  = `<button class="btn pri big wide" data-go="${t.id}:closed">会計完了</button>`;
+    back  = `<button class="btn gh sm" data-go="${t.id}:serving">接客中に戻す</button>`;
+  } else {
+    extra = orderField;
+    main  = `<button class="btn pri big wide" data-go="${t.id}:empty">バッシング完了</button>`;
+    back  = `<button class="btn gh sm" data-go="${t.id}:billing">会計待ちに戻す</button>`;
+  }
+
+  const sub = [];
+  if(t.guests > 0) sub.push(`${t.guests}名`);
+  if(t.seatedAt && t.status !== "empty") sub.push(`${hhmm(t.seatedAt)} 入店`);
+
+  openSheet(`<h3>${esc(t.name)}${sub.length?`<small>${sub.join(" ・ ")}</small>`:""}</h3>
+    <div class="statenow s-${t.status}"><span class="dot"></span>${S[t.status].label}
+      <span class="t" data-tick="up:${t.statusSince}"></span></div>
+    ${extra}
+    ${main}
+    <div class="sheet-acts">
+      <button class="btn gh" data-closesheet="1">閉じる</button>
+      ${back}
+    </div>`);
+}
+
+let newCat = "";   // 設定画面で入力中の新しいジャンル名
+
+/* ---- この端末の卓番設定（管理者PIN必須） ---- */
+let devPin = "", devAuthed = false, devErr = "";
+function sheetDevice(){
+  if(!devAuthed){
+    openSheet(`<h3>卓番の設定<small>管理者PINを入力してください</small></h3>
+      <div class="field"><label>管理者PIN</label>
+        <input class="inp pinbox" id="devPinInput" data-devpin="1" type="password"
+               inputmode="numeric" maxlength="4" value="${esc(devPin)}" placeholder="••••"></div>
+      ${devErr ? `<p class="note" style="color:var(--danger);margin:-8px 0 0">${esc(devErr)}</p>` : ""}
+      <div class="sheet-acts"><button class="btn gh" data-devclose="1">閉じる</button></div>`);
+    setTimeout(()=>{ const i = document.getElementById("devPinInput"); if(i) i.focus(); }, 60);
+    return;
+  }
+  const cur = state.deviceTable ? tableOf(state.deviceTable) : null;
+  openSheet(`<h3>この端末の卓番<small>${cur ? esc(cur.name)+" 卓に設定中" : "未設定"}</small></h3>
+    <div class="tgrid">${state.tables.map(t=>
+      `<button class="tsel ${t.id===state.deviceTable?"on":""}" data-devset="${t.id}">${esc(t.name)}</button>`).join("")}</div>
+    <p class="note">この設定は端末ごとに保持されます。卓を変えるときは同じ手順でやり直してください。</p>
+    <div class="sheet-acts"><button class="btn gh" data-devclose="1">閉じる</button></div>`);
+}
+
+/* 管理者向け：伝票の確認のみ（注文の入力はできない） */
+function sheetBill(tid){
+  const t = tableOf(tid); if(!t) return;
+  const fl = feeLines(t), bs = batchesOf(tid);
+  const body = (fl.length || bs.length)
+    ? `${fl.length ? `<div class="bhead first">料金<span>${yen(feeTotal(t))}</span></div>
+        ${fl.map(l=>`<div class="srow"><div class="sn">${l.name}<span>${l.note||""}</span></div>
+          <div class="ss">${yen(l.amount)}</div></div>`).join("")}` : ""}
+       ${bs.map((b,i)=>`<div class="bhead ${(i===0&&!fl.length)?"first":""}">${
+            b.manual?"スタッフ入力":hhmm(b.at)+" の注文"}<span>${yen(batchSum(b))}</span></div>
+          ${b.lines.map(l=>`<div class="srow">
+            <div class="sn">${esc(l.name)}<span>${yen(l.price)} × ${l.qty}</span></div>
+            <div class="ss">${yen(l.price*l.qty)}</div></div>`).join("")}`).join("")}`
+    : `<div class="empty" style="margin:0">まだ何も入っていません。</div>`;
+
+  openSheet(`<h3>${esc(t.name)} の伝票<small>${S[t.status].label}${
+      t.seatedAt?` ・ ${hhmm(t.seatedAt)} 入店`:""}</small></h3>
+    <div class="slip">${body}${totalsBlock(t)}</div>
+    <p class="note">管理者は伝票の確認のみです。注文の追加・修正は注文端末かホールから行ってください。</p>
+    <div class="sheet-acts"><button class="btn gh" data-closesheet="1">閉じる</button></div>`);
+}
+
+function sheetAccount(){
+  const a = acctOf(); if(!a) return;
+  const r = ROLES[a.role];
+  const perms = a.role==="order"
+      ? "注文・会計依頼・バッシング完了ができます。卓番は歯車から管理者PINで設定します。"
+    : a.role==="kitchen"
+      ? "オーダー通知と在庫だけを見られます。テーブルや注文には触れません。"
+    : a.role==="staff"
+      ? "テーブル管理・注文・初回回し・会計完了ができます。設定は開けません。"
+      : "テーブル管理・初回回し・厨房・設定を扱えます。注文の入力はできず、伝票は確認のみです。";
+  openSheet(`<h3>${esc(a.name)}<small>${r.label}</small></h3>
+    <div class="statenow"><span class="dot" style="background:var(--gold)"></span>${r.label}</div>
+    <p class="note" style="margin:0 0 18px">${perms}</p>
+    <button class="btn dan big wide" data-logout="1">ログアウト</button>
+    <div class="sheet-acts"><button class="btn gh" data-closesheet="1">閉じる</button></div>`);
+}
+
+/* ---- new rotation draft ---- */
+let draft = null;
+function sheetNewRot(tableId){
+  draft = {
+    tableId: tableId || (state.tables.find(t=>t.status==="empty")||state.tables[0]||{}).id || null,
+    guests: 1, minutes: state.defaultMin, perRound: 1, order: [],
+    firstFee: state.fees.first          // 初回料金（あり／なし）
+  };
+  renderNewRot();
+}
+function renderNewRot(){
+  const d = draft;
+  const usable = state.tables.filter(t=>t.status==="empty" || t.status==="serving");
+  if(!usable.some(t=>t.id===d.tableId)) d.tableId = usable.length ? usable[0].id : null;
+  const opts = usable.map(t=>`<option value="${t.id}" ${t.id===d.tableId?"selected":""}>
+      ${esc(t.name)}（${S[t.status].label}）</option>`).join("");
+  const avail = state.casts.filter(c=>c.active);
+  const picks = avail.map(c=>{
+    const i = d.order.indexOf(c.id);
+    return `<button data-pick="${c.id}" aria-pressed="${i>=0}">${esc(c.name)}${i>=0?`<span class="idx">${i+1}</span>`:""}</button>`;
+  }).join("");
+  const ord = d.order.map((cid,i)=>`<div class="ordrow"><span class="no">${i+1}</span>
+      <span class="nm">${esc(castName(cid))}</span>
+      <button data-mv="${i}:-1" ${i===0?"disabled":""}>↑</button>
+      <button data-mv="${i}:1" ${i===d.order.length-1?"disabled":""}>↓</button>
+      <button data-rm="${i}">✕</button></div>`).join("");
+  const nR = Math.ceil(d.order.length / d.perRound) || 0;
+
+  openSheet(`<h3>初回回しを始める<small>ORDER OF ROTATION</small></h3>
+    <div class="field"><label>テーブル</label>
+      <select class="inp" data-dtable="1" ${usable.length?"":"disabled"}>
+        ${opts||`<option>使える卓がありません</option>`}</select>
+      ${usable.length?"":`<p class="note">空席または接客中の卓がありません。バッシング完了で空席に戻してください。</p>`}</div>
+
+    <div class="field"><label>初回料金</label>
+      <div class="quick">
+        <button data-dfee="${state.fees.first}" aria-pressed="${d.firstFee===state.fees.first}">${yen(state.fees.first)}</button>
+        <button data-dfee="0" aria-pressed="${d.firstFee===0}">${yen(0)}</button>
+      </div>
+      <p class="round-hint">${yen(d.firstFee)} × ${d.guests}名 ＝ <b>${yen(d.firstFee*d.guests)}</b></p>
+      <p class="round-hint">初回料金を設定すると、この卓のセット料金と指名料は自動でオフになります（あとから卓のメニューで戻せます）。</p></div>
+
+    <div class="field"><label>来店人数</label>
+      <div class="stepper"><button data-dguest="-1">−</button>
+        <div class="val">${d.guests}<small>名</small></div>
+        <button data-dguest="1">＋</button></div></div>
+
+    <div class="field"><label>1組あたりの時間</label>
+      <div class="stepper"><button data-dmin2="-1">−</button>
+        <div class="val">${d.minutes}<small>分</small></div>
+        <button data-dmin2="1">＋</button></div>
+      <div class="quick">${[5,10,15,20].map(n=>`<button data-dminset="${n}" aria-pressed="${d.minutes===n}">${n}分</button>`).join("")}</div></div>
+
+    <div class="field"><label>同時に付けるキャスト数</label>
+      <div class="stepper"><button data-dper="-1">−</button>
+        <div class="val">${d.perRound}<small>名ずつ</small></div>
+        <button data-dper="1">＋</button></div></div>
+
+    <div class="field"><label>付ける順番（タップした順）</label>
+      <div class="castpick">${picks || `<span class="note">出勤中のキャストがいません。設定から追加してください。</span>`}</div>
+      ${d.order.length?`<div class="ordlist">${ord}</div>`:""}
+      <p class="round-hint">${d.order.length
+        ? `全 <b>${nR}組</b> ／ 所要 <b>約${nR*d.minutes}分</b>（${hhmm(Date.now())} 開始 → ${hhmm(Date.now()+nR*d.minutes*60000)} 終了予定）`
+        : `キャストをタップすると回す順番が決まります。`}</p></div>
+
+    <div class="sheet-acts">
+      <button class="btn gh" data-closesheet="1">やめる</button>
+      <button class="btn pri" data-startrot="1" ${d.order.length&&d.tableId?"":"disabled"}>開始する</button>
+    </div>`);
+}
+
+/* ========== events ========== */
+document.addEventListener("click", e=>{
+  const el = e.target.closest("[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-psold],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
+  if(!el){
+    if(e.target.dataset && e.target.dataset.sheet) closeSheet();
+    return;
+  }
+  const d = el.dataset;
+
+  if(d.okconfirm){
+    const f = pendingAction; pendingAction = null;
+    $("#sheetHost").innerHTML = "";
+    if(f) f();
+    return;
+  }
+
+  /* order terminal */
+  if(d.dev){ devPin=""; devErr=""; devAuthed=false; sheetDevice(); return; }
+  if(d.devclose){ devPin=""; devErr=""; devAuthed=false; closeSheet(); return; }
+  if(d.devset){
+    state.deviceTable = d.devset;
+    state.term = { stage:"idle", tab:"menu" };
+    devPin=""; devErr=""; devAuthed=false;
+    closeSheet(); commit(); toast(`${tableOf(d.devset).name} 卓に設定しました`); return;
+  }
+  if(d.tstart){
+    const t = state.deviceTable ? tableOf(state.deviceTable) : null;
+    if(t && t.status === "empty"){
+      go(t, "serving");                       // 入店時刻を打刻してセット料金・指名料を開始
+      toast(`${hhmm(t.seatedAt)} 入店：セット料金 ${yen(setFee(t))} / 指名料 ${yen(state.fees.nom)}`);
+    }
+    state.term = {stage:"active", tab:"menu"}; window.scrollTo(0,0); commit(); return;
+  }
+  if(d.thome){ state.term.stage = "idle"; window.scrollTo(0,0); render(); return; }
+  if(d.ttab){ state.term.tab = d.ttab; window.scrollTo(0,0); render(); return; }
+  if(d.cadd){ const [tid,pid] = d.cadd.split(":"); cartAdd(tid,pid,1); commit(); return; }
+  if(d.cqty){ const [tid,pid,dv] = d.cqty.split(":"); cartAdd(tid,pid,Number(dv)); commit(); return; }
+  if(d.cclear){
+    const tid = d.cclear;
+    if(!cartOf(tid).length) return;
+    askConfirm({ title:"カートを空にしますか？", ok:"空にする", danger:true,
+      msg:"まだ確定していない注文がすべて取り消されます。",
+      run:()=>{ state.cart[tid] = []; commit(); } });
+    return;
+  }
+  if(d.confirm){
+    const n = cartCount(d.confirm), amt = cartTotal(d.confirm);
+    if(!cartConfirm(d.confirm)) return;
+    state.term.tab = "menu";          // 待機画面には戻さず、続けて注文できるようにする
+    window.scrollTo(0,0); commit();
+    toast(`注文を確定しました（${n}点 ${yen(amt)}）`); return;
+  }
+  if(d.tbill){
+    const tid = d.tbill, t = tableOf(tid);
+    askConfirm({ title:"会計に進みます", ok:"会計をお願いする",
+      msg:`合計 <b style="color:var(--gold);font-family:var(--mono)">${yen(billTotal(t))}</b><br>これ以降このテーブルからは注文できなくなります。`,
+      run:()=>{ go(t,"billing"); state.term = {stage:"idle", tab:"menu"}; window.scrollTo(0,0); commit(); } });
+    return;
+  }
+  if(d.tcancel){
+    const t = tableOf(d.tcancel);
+    go(t,"serving"); state.term = {stage:"idle", tab:"menu"}; commit();
+    toast("会計をキャンセルしました"); return;
+  }
+  if(d.tbus){
+    const t = tableOf(d.tbus);
+    go(t,"empty"); state.term = {stage:"idle", tab:"menu"}; commit();
+    toast("バッシング完了：空席に戻しました"); return;
+  }
+
+  /* login */
+  if(d.key){
+    const k = d.key;
+    if(k === "del")      state.pin = state.pin.slice(0,-1);
+    else if(k === "clr") state.pin = "";
+    else if(state.pin.length < 4) state.pin += k;
+    state.pinErr = "";
+    if(state.pin.length === 4){
+      const a = state.accounts.find(x => x.pin === state.pin);
+      state.pin = "";
+      if(a){
+        state.session = a.id;
+        state.tab = ROLES[a.role].tabs[0];
+        state.orderTable = null;
+        state.term = { stage:"idle", tab:"menu" };
+        commit(); toast(`${a.name}（${ROLES[a.role].label}）でログインしました`);
+      } else {
+        state.pinErr = "PINが違います";
+        commit();
+        const c = document.querySelector(".login-card");
+        if(c){ c.classList.add("shake"); setTimeout(()=>c.classList.remove("shake"), 400); }
+      }
+      return;
+    }
+    commit(); return;
+  }
+  if(d.acct){ sheetAccount(); return; }
+  if(d.logout){
+    state.session = null; state.pin = ""; state.pinErr = "";
+    closeSheet(); commit(); return;
+  }
+
+  if(d.tab){ state.tab = d.tab; state.filter="all"; render(); return; }
+  if(d.filter){ state.filter = d.filter; render(); return; }
+  if(d.table){ sheetTable(d.table); return; }
+  if(d.closesheet){ closeSheet(); return; }
+
+  /* table sheet */
+  if(d.go){
+    const [id,k] = d.go.split(":"); const t = tableOf(id);
+    if(k === "closed" && !can("manage")){ toast("会計完了はホール・管理者が行います"); return; }
+    const inSheet = !!$("#sheetHost").firstElementChild;
+    go(t,k); commit();
+    if(inSheet){ if(k==="empty" || k==="closed") closeSheet(); else sheetTable(id); }
+    return;
+  }
+  if(d.guest){
+    const [id,dv] = d.guest.split(":"); const t = tableOf(id);
+    t.guests = Math.max(0, Math.min(30, t.guests + Number(dv)));
+    sheetTable(id); commit(); return;
+  }
+  if(d.firstoff){
+    const t = tableOf(d.firstoff);
+    t.firstFee = null; t.fees.set = true; t.fees.nom = true;
+    sheetTable(t.id); commit(); toast("初回料金を解除しました"); return;
+  }
+  if(d.tcast){
+    const [id,cid] = d.tcast.split(":"); const t = tableOf(id);
+    if(!t.casts) t.casts = [];
+    t.casts = t.casts.includes(cid) ? t.casts.filter(x=>x!==cid) : t.casts.concat(cid);
+    sheetTable(id); commit(); return;
+  }
+  if(d.feetog){
+    const [id,key] = d.feetog.split(":"); const t = tableOf(id);
+    t.fees[key] = !t.fees[key];
+    sheetTable(id); commit(); return;
+  }
+  if(d.idle){
+    state.idleSec = Math.max(10, Math.min(600, state.idleSec + Number(d.idle)));
+    commit(); return;
+  }
+
+  /* order */
+  if(d.order){
+    if(!can("order")){ sheetBill(d.order); return; }
+    state.orderTable = d.order; state.tab = "order"; closeSheet(); window.scrollTo(0,0); commit(); return;
+  }
+  if(d.otab){ state.orderTable = d.otab; commit(); return; }
+  if(d.add){
+    const [tid,pid] = d.add.split(":"); const t = tableOf(tid);
+    if(t.status === "empty") go(t,"serving");     // 注文が入った時点で接客中に
+    addLine(tid,pid); commit(); return;
+  }
+  if(d.qty){ const [tid,lid,dv] = d.qty.split(":"); setQty(tid,lid,Number(dv)); commit(); return; }
+
+  /* accounts */
+  if(d.addacct){
+    state.accounts.push({ id:uid(), name:"新しいアカウント", role:"order", pin:"" });
+    commit(); return;
+  }
+  if(d.adel){
+    if(d.adel === state.session){ toast("ログイン中のアカウントは削除できません"); return; }
+    const rest = state.accounts.filter(a=>a.id!==d.adel);
+    if(!rest.some(a=>a.role==="manager")){ toast("管理者を1人以上残してください"); return; }
+    state.accounts = rest; commit(); return;
+  }
+
+  /* kitchen */
+  if(d.kdone){ const f = findBatch(d.kdone); if(f){ f.b.done = true; state.rev++; commit(); } return; }
+  if(d.kundo){ const f = findBatch(d.kundo); if(f){ f.b.done = false; state.rev++; commit(); } return; }
+
+  /* stock */
+  if(d.ptrack){
+    const p = prodOf(d.ptrack);
+    if(p){ p.track = !p.track; if(p.track && p.stock <= 0) p.stock = 10; }
+    commit(); return;
+  }
+  if(d.pstock){
+    const [pid,dv] = d.pstock.split(":"); const p = prodOf(pid);
+    if(p) p.stock = Math.max(0, p.stock + Number(dv));
+    commit(); return;
+  }
+  if(d.psold){
+    const p = prodOf(d.psold);
+    if(p) p.soldout = !p.soldout;
+    commit(); return;
+  }
+
+  /* sections / categories */
+  if(d.sec){ state.openSecs[d.sec] = !state.openSecs[d.sec]; render(); return; }
+  if(d.cat){ state.openCats[d.cat] = !state.openCats[d.cat]; render(); return; }
+  if(d.catadd){
+    const n = newCat.trim();
+    if(!n){ toast("ジャンル名を入力してください"); return; }
+    if(state.categories.includes(n)){ toast("同じ名前のジャンルがあります"); return; }
+    state.categories.push(n); newCat = ""; state.openCats[n] = true; commit(); return;
+  }
+  if(d.catdel){
+    const i = Number(d.catdel), name = state.categories[i];
+    const rest = state.categories.filter((_,x)=>x!==i);
+    const moveTo = rest[0] || "未分類";
+    askConfirm({ title:`「${name}」を削除しますか？`, ok:"削除する", danger:true,
+      msg:`このジャンルの商品 ${state.products.filter(p=>p.cat===name).length} 件は「${moveTo}」へ移動します。`,
+      run:()=>{
+        state.products.forEach(p=>{ if(p.cat===name) p.cat = moveTo; });
+        state.categories = rest; delete state.openCats[name]; commit();
+      }});
+    return;
+  }
+
+  /* products */
+  if(d.addprod){
+    const cat = (d.addprod === "1") ? (state.categories[0] || "未分類") : d.addprod;
+    state.products.push({ id:uid(), name:"新しい商品", price:0, cat, stock:10, track:false, soldout:false });
+    state.openCats[cat] = true; commit(); return;
+  }
+  if(d.pdel){
+    state.products = state.products.filter(p=>p.id!==d.pdel); commit(); return;
+  }
+  if(d.pmv){
+    const [pid,dv] = d.pmv.split(":"); const p = prodOf(pid); if(!p) return;
+    const sibs = state.products.filter(x=>x.cat===p.cat);
+    const i = sibs.indexOf(p), j = i + Number(dv);
+    if(j < 0 || j >= sibs.length) return;
+    const a = state.products;
+    const ia = a.indexOf(sibs[i]), ib = a.indexOf(sibs[j]);
+    [a[ia],a[ib]] = [a[ib],a[ia]];
+    commit(); return;
+  }
+  if(d.feeon){
+    state.fees[d.feeon] = !state.fees[d.feeon]; commit(); return;
+  }
+
+  /* rotation */
+  if(d.newRot){ sheetNewRot(d.newRot==="1"?null:d.newRot); return; }
+  if(d.gotoRot){ closeSheet(); state.tab="first"; render(); return; }
+  if(d.nextRot){ advance(state.rotations.find(r=>r.id===d.nextRot)); return; }
+  if(d.pauseRot){
+    const r = state.rotations.find(x=>x.id===d.pauseRot);
+    if(r.runningSince){ r.elapsedMs += Date.now()-r.runningSince; r.runningSince=null; }
+    else r.runningSince = Date.now();
+    commit(); return;
+  }
+  if(d.extendRot){
+    const r = state.rotations.find(x=>x.id===d.extendRot);
+    r.elapsedMs -= 60000; commit(); toast("1分延長しました"); return;
+  }
+  if(d.closeRot){
+    const r = state.rotations.find(x=>x.id===d.closeRot);
+    r.closed = true; commit(); toast("初回回しを終了しました"); return;
+  }
+  if(d.restartRot){
+    const r = state.rotations.find(x=>x.id===d.restartRot);
+    r.done=false; r.index=0; r.elapsedMs=0; r.runningSince=Date.now(); r.startedAt=Date.now();
+    commit(); return;
+  }
+
+  /* new rotation draft */
+  if(d.pick){
+    const i = draft.order.indexOf(d.pick);
+    if(i>=0) draft.order.splice(i,1); else draft.order.push(d.pick);
+    renderNewRot(); return;
+  }
+  if(d.mv){
+    const [i,dv] = d.mv.split(":").map(Number); const j = i+dv;
+    if(j>=0 && j<draft.order.length){ const a=draft.order; [a[i],a[j]]=[a[j],a[i]]; }
+    renderNewRot(); return;
+  }
+  if(d.rm){ draft.order.splice(Number(d.rm),1); renderNewRot(); return; }
+  if(d.dguest){
+    draft.guests = Math.max(1, Math.min(12, draft.guests + Number(d.dguest)));
+    draft.perRound = Math.max(1, Math.min(draft.guests, draft.perRound));
+    renderNewRot(); return;
+  }
+  if(d.dmin2){ draft.minutes = Math.max(1, Math.min(60, draft.minutes + Number(d.dmin2))); renderNewRot(); return; }
+  if(d.dminset){ draft.minutes = Number(d.dminset); renderNewRot(); return; }
+  if(d.dfee !== undefined){ draft.firstFee = Number(d.dfee); renderNewRot(); return; }
+  if(d.dper){ draft.perRound = Math.max(1, Math.min(6, draft.perRound + Number(d.dper))); renderNewRot(); return; }
+  if(d.startrot){ startRotation(); return; }
+
+  /* settings */
+  if(d.tcount){ changeTableCount(state.tables.length + Number(d.tcount)); return; }
+  if(d.tset){ changeTableCount(Number(d.tset)); return; }
+  if(d.dmin){ state.defaultMin = Math.max(1, Math.min(60, state.defaultMin + Number(d.dmin))); commit(); return; }
+  if(d.addcast){ state.casts.push({id:uid(), name:`キャスト${state.casts.length+1}`, active:true}); commit(); return; }
+  if(d.delcast){ state.casts = state.casts.filter(c=>c.id!==d.delcast); commit(); return; }
+  if(d.ctog){ const c = state.casts.find(x=>x.id===d.ctog); c.active = !c.active; commit(); return; }
+  if(d.deltable){
+    const t = tableOf(d.deltable);
+    if(t.status!=="empty"){ toast("使用中の卓は削除できません"); return; }
+    delete state.orders[t.id]; delete state.cart[t.id];
+    state.accounts.forEach(a=>{ if(a.tableId===t.id) a.tableId = null; });
+    state.tables = state.tables.filter(x=>x.id!==d.deltable); commit(); return;
+  }
+  if(d.reset){
+    askConfirm({ title:"すべて初期化しますか？", ok:"初期化する", danger:true,
+      msg:"テーブルの状態・伝票・初回回しがすべてリセットされます。商品と アカウントは残ります。",
+      run:()=>{
+        state.tables.forEach(t=>{ t.status="empty"; t.guests=0; t.seatedAt=null; t.statusSince=Date.now(); });
+        state.rotations = []; state.orders = {}; state.cart = {}; state.orderTable = null;
+        state.term = { stage:"idle", tab:"menu" };
+        commit(); toast("初期化しました");
+      } });
+    return;
+  }
+});
+
+let inputTimer = null;
+function commitSoft(){                     // 入力中は再描画せず配信だけ遅らせて行う
+  clearTimeout(inputTimer);
+  inputTimer = setTimeout(()=>{ send(); saveLocal(); }, 400);
+}
+document.addEventListener("input", e=>{
+  const t = e.target;
+  if(t.dataset && (t.dataset.pname||t.dataset.pprice||t.dataset.tname||t.dataset.cname||
+     t.dataset.fee||t.dataset.pstocknum||t.dataset.catname||t.dataset.aname||t.dataset.apin)) commitSoft();
+  if(t.dataset.devpin){
+    devPin = t.value.replace(/[^0-9]/g,"").slice(0,4);
+    t.value = devPin; devErr = "";
+    if(devPin.length === 4){
+      if(state.accounts.some(a=>a.role==="manager" && a.pin===devPin)){
+        devAuthed = true; devPin = "";
+      } else { devErr = "管理者PINが違います"; devPin = ""; }
+      sheetDevice();
+    }
+    return;
+  }
+  if(t.id==="setShop"){ state.shopName = t.value; $("#shopName").textContent = t.value||"店舗管理"; return; }
+  if(t.dataset.tname){ tableOf(t.dataset.tname).name = t.value; return; }
+  if(t.dataset.cname){ const c=state.casts.find(x=>x.id===t.dataset.cname); if(c) c.name=t.value; return; }
+  if(t.dataset.pname){ const p=prodOf(t.dataset.pname); if(p) p.name=t.value; return; }
+  if(t.dataset.pprice){
+    const p=prodOf(t.dataset.pprice);
+    if(p) p.price = Math.max(0, parseInt(t.value,10) || 0);
+    return;
+  }
+  if(t.dataset.fee){
+    const k = t.dataset.fee;
+    const max = (k==="service" || k==="tax") ? 100 : 9999999;
+    state.fees[k] = Math.min(max, Math.max(0, parseInt(t.value,10) || 0));
+    return;
+  }
+  if(t.dataset.newcat !== undefined){ newCat = t.value; return; }
+  if(t.dataset.catname !== undefined){
+    const i = Number(t.dataset.catname), old = state.categories[i], nv = t.value;
+    state.categories[i] = nv;
+    state.products.forEach(p=>{ if(p.cat === old) p.cat = nv; });
+    if(state.openCats[old]){ delete state.openCats[old]; state.openCats[nv] = true; }
+    return;
+  }
+  if(t.dataset.pstocknum){
+    const p = prodOf(t.dataset.pstocknum);
+    if(p){ p.stock = Math.max(0, parseInt(t.value,10) || 0); if(p.stock > 0) p.soldout = false; }
+    return;
+  }
+  if(t.dataset.aname){ const a=state.accounts.find(x=>x.id===t.dataset.aname); if(a) a.name=t.value; return; }
+  if(t.dataset.apin){
+    const a=state.accounts.find(x=>x.id===t.dataset.apin);
+    if(a){ a.pin = t.value.replace(/[^0-9]/g,"").slice(0,4); t.value = a.pin; }
+    return;
+  }
+});
+document.addEventListener("change", e=>{
+  if(e.target.dataset.pcat || e.target.dataset.arole) commitSoft();
+  if(e.target.dataset.dtable){ draft.tableId = e.target.value; }
+  if(e.target.dataset.pcat){
+    const p = prodOf(e.target.dataset.pcat);
+    if(p){ p.cat = e.target.value; state.openCats[p.cat] = true; render(); }
+    return;
+  }
+  if(e.target.dataset.arole){
+    const a = state.accounts.find(x=>x.id===e.target.dataset.arole);
+    if(!a) return;
+    if(a.role==="manager" && e.target.value!=="manager"
+       && !state.accounts.some(x=>x.id!==a.id && x.role==="manager")){
+      toast("管理者を1人以上残してください"); render(); return;
+    }
+    a.role = e.target.value;
+    if(a.role !== "order") a.tableId = null;
+    render();
+  }
+});
+
+/* ========== actions ========== */
+/* 空席 →接客開始→ 接客中 →会計→ 会計待ち →会計完了→ 使用不可 →バッシング完了→ 空席 */
+const GO_MSG = { serving:"接客中", billing:"会計待ち", closed:"使用不可（片付け待ち）", empty:"空席" };
+function go(t, k){
+  if(t.status === k) return;
+  if(k === "serving"){
+    if(!t.seatedAt) t.seatedAt = Date.now();   // 入店時刻
+    t.billedAt = null;                          // 会計をキャンセルしたらセット料金の計測を再開
+    if(t.guests === 0) t.guests = 1;
+  }
+  if(k === "billing"){
+    t.billedAt = Date.now();                    // ここでセット料金が確定
+    const r = rotOf(t.id); if(r) r.closed = true;   // 会計に進んだら初回回しは終了
+  }
+  if(k === "empty"){
+    const r = rotOf(t.id); if(r) r.closed = true;
+    delete state.orders[t.id];        // バッシング完了で伝票をリセット
+    delete state.cart[t.id];
+    t.guests = 0; t.seatedAt = null; t.billedAt = null; t.firstFee = null; t.casts = [];
+    t.fees = { set:true, nom:true, douhan:false };
+  }
+  t.status = k; t.statusSince = Date.now();
+  toast(`${t.name} → ${GO_MSG[k]}`);
+}
+
+function changeTableCount(n){
+  n = Math.max(1, Math.min(60, n));
+  const cur = state.tables.length;
+  if(n > cur){
+    for(let i=cur;i<n;i++) state.tables.push(mkTable(i+1));
+  } else if(n < cur){
+    for(let i=cur;i>n;i--){
+      const last = state.tables[state.tables.length-1];
+      if(last.status!=="empty"){ toast("使用中の卓があるため減らせません"); break; }
+      state.tables.pop();
+    }
+  }
+  render();
+}
+
+function startRotation(){
+  const d = draft;
+  const t = tableOf(d.tableId); if(!t || !d.order.length) return;
+  const old = rotOf(t.id); if(old) old.closed = true;
+  state.rotations.unshift({
+    id: uid(), tableId: t.id, guests: d.guests, minutes: d.minutes, perRound: d.perRound,
+    order: d.order.slice(), index: 0, startedAt: Date.now(),
+    elapsedMs: 0, runningSince: Date.now(), done:false, closed:false
+  });
+  if(t.status !== "serving") go(t,"serving");
+  t.guests = d.guests;
+  t.firstFee = d.firstFee;                      // 初回料金を確定
+  t.fees.set = false; t.fees.nom = false;       // 初回はこの料金のみ
+  closeSheet(); state.tab = "first"; render();
+  toast(`${t.name} の初回回しを開始しました`);
+}
+
+let lastRev = -1;
+
+/* ==========================================================
+   連携（同期）
+   ・BroadcastChannel で「同じブラウザで開いている別タブ／別ウィンドウ」と即時同期します。
+   ・端末をまたぐ同期（タブレット14台）はサーバーが必要です。
+     下の send / onRecv を WebSocket に差し替えるだけで動くようにしてあります。
+   ・PERSIST を true にすると、この端末のブラウザに保存して再読み込み後も残ります。
+     （Claudeのプレビュー内では保存が使えないため既定は false）
+   ========================================================== */
+const PERSIST = false;                 // ← サーバーに置いたら true にしてください
+const SYNC_KEY = "store-manager-v1";
+const CLIENT_ID = uid();
+const SHARED = ["shopName","tables","casts","categories","products","accounts",
+                "orders","cart","fees","rotations","defaultMin","idleSec","rev"];
+
+let chan = null, applying = false, syncTimer = null;
+try { chan = new BroadcastChannel(SYNC_KEY); } catch(e) { chan = null; }
+
+const snapshot = () => { const o = {}; SHARED.forEach(k=>o[k] = state[k]); return o; };
+
+function send(){
+  if(!chan || applying) return;
+  try { chan.postMessage({ from:CLIENT_ID, at:Date.now(), data:JSON.parse(JSON.stringify(snapshot())) }); }
+  catch(e){}
+}
+function saveLocal(){
+  if(!PERSIST) return;
+  try { localStorage.setItem(SYNC_KEY, JSON.stringify(snapshot())); } catch(e){}
+}
+function loadLocal(){
+  if(!PERSIST) return false;
+  try {
+    const raw = localStorage.getItem(SYNC_KEY);
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    SHARED.forEach(k=>{ if(d[k] !== undefined) state[k] = d[k]; });
+    return true;
+  } catch(e){ return false; }
+}
+function applyRemote(d){
+  applying = true;
+  SHARED.forEach(k=>{ if(d[k] !== undefined) state[k] = d[k]; });
+  applying = false;
+  if(state.deviceTable && !tableOf(state.deviceTable)) state.deviceTable = null;
+  render();
+}
+if(chan){
+  chan.onmessage = e=>{
+    const m = e.data;
+    if(!m || m.from === CLIENT_ID) return;
+    if(m.hello){ send(); return; }          // 後から開いたタブに現在の状態を渡す
+    applyRemote(m.data);
+  };
+}
+
+/* 状態を変えたら必ずこれを呼ぶ：画面更新＋他タブへ配信＋保存 */
+function commit(){
+  render();
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=>{ send(); saveLocal(); }, 60);
+}
+const syncOn = () => !!chan;
+
+/* ---- 注文端末：無操作が続いたら待機画面に戻す ---- */
+let idleTimer = null;
+function resetIdle(){
+  clearTimeout(idleTimer);
+  if(!state.session || roleOf() !== "order" || state.term.stage !== "active") return;
+  idleTimer = setTimeout(()=>{
+    if(state.session && roleOf() === "order" && state.term.stage === "active"){
+      state.term = { stage:"idle", tab:"menu" };
+      render();
+    }
+  }, Math.max(10, state.idleSec) * 1000);
+}
+["pointerdown","touchstart","keydown","wheel","scroll"].forEach(ev=>
+  document.addEventListener(ev, resetIdle, {passive:true, capture:true}));
+
+/* ========== ticker ========== */
+function tick(){
+  const now = new Date();
+  $("#clock").textContent = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+
+  /* 新しいオーダーが入ったら厨房画面を更新する */
+  if(state.session && state.rev !== lastRev &&
+     (state.tab === "kitchen" || roleOf() === "manager" || roleOf() === "staff")){
+    render(); return;
+  }
+
+  /* セット料金が1時間刻みで変わったら画面を更新する */
+  let feeChanged = false;
+  state.tables.forEach(t=>{
+    if(t.status !== "serving" || !t.seatedAt) return;
+    const h = stayHours(t);
+    if(t._h !== h){ if(t._h !== undefined) feeChanged = true; t._h = h; }
+  });
+  if(feeChanged){ render(); return; }
+
+  document.querySelectorAll("[data-tick]").forEach(el=>{
+    const [kind, val] = el.dataset.tick.split(":");
+    if(kind==="up"){ el.textContent = fmt(Date.now() - Number(val)); }
+    else if(kind==="rot"){
+      const r = state.rotations.find(x=>x.id===val);
+      if(!r) return;
+      const rem = remain(r);
+      el.textContent = fmt(rem);
+      el.classList.toggle("over", rem < 0);
+    }
+  });
+
+  document.querySelectorAll("[data-prog]").forEach(el=>{
+    const r = state.rotations.find(x=>x.id===el.dataset.prog);
+    if(!r) return;
+    el.style.width = Math.min(100, (elapsed(r)/limitMs(r))*100) + "%";
+  });
+
+  // 交代1分前と時間超過のタイミングで一度だけ知らせる
+  let redraw = false;
+  state.rotations.forEach(r=>{
+    if(r.closed || r.done || !r.runningSince) return;
+    const rem = remain(r);
+
+    const soon = rem <= SOON_MS;
+    if(soon && !r._warn){
+      r._warn = true; redraw = true;
+      const t = tableOf(r.tableId);
+      const nx = rounds(r)[r.index + 1];
+      toast(nx ? `まもなく交代：${t?t.name:""}卓 次は ${nx.map(castName).join("・")}`
+               : `まもなく初回終了：${t?t.name:""}卓`);
+    }
+    if(!soon && r._warn){ r._warn = false; redraw = true; }
+
+    const over = rem < 0;
+    if(over && !r._flag){ r._flag = true; redraw = true; }
+    if(!over && r._flag){ r._flag = false; redraw = true; }
+  });
+  if(redraw && can("manage")) render();
+}
+setInterval(tick, 1000);
+
+loadLocal();
+render();
+try { if(chan) chan.postMessage({ from:CLIENT_ID, hello:true }); } catch(e) {}
+</script>
+</body>
+</html>
