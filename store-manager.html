@@ -583,7 +583,7 @@ const ORDER = ["empty","serving","billing","closed"];
 
 function mkTable(n){
   return { id:uid(), name:String(n), status:"empty", guests:0, statusSince:Date.now(),
-           seatedAt:null, billedAt:null, firstFee:null, casts:[],
+           seatedAt:null, billedAt:null, firstFee:null, casts:[], customerName:"",
            fees:{ set:true, nom:true, douhan:false } };
 }
 /* 権限：注文専用 / 厨房 / ホール / 管理者 */
@@ -612,7 +612,7 @@ const state = {
           .map(n=>({ id:uid(), name:n, active:true })),
   categories: SEED_CATS.slice(),
   products: SEED_PRODUCTS.map(([name,price,cat,stock])=>
-    ({ id:uid(), name, price, cat, stock, track: cat==="ボトル・シャンパン", soldout:false })),
+    ({ id:uid(), name, price, cat, stock, track: cat==="ボトル・シャンパン" })),
   accounts: [
     { id:uid(), name:"注文端末", role:"order",   pin:"1111" },
     { id:uid(), name:"ホール",   role:"staff",   pin:"2222" },
@@ -627,7 +627,8 @@ const state = {
     setCap:5000,       // ここに達したらフリータイム（打ち止め）
     nom:1000,          // 指名料
     douhan:1000,       // 同伴料
-    first:1000,        // 初回料金（初回回しの開始時に 1000 か 0 を選ぶ）
+    firstHigh:1000,     // 初回料金（高いほう）
+    firstLow:0,         // 初回料金（低いほう）
     service:10, serviceOn:true,   // サービス料（％）
     tax:10,     taxOn:true        // 消費税（％）
   },
@@ -748,12 +749,13 @@ const feeTotal  = t => feeLines(t).reduce((s,l)=>s + l.amount, 0);
 /* 小計 → サービス料 → 消費税 → 合計 */
 function bill(t){
   if(!t) return { sub:0, svc:0, tax:0, total:0 };
+  const isFirst = t.firstFee !== null && t.firstFee !== undefined;   // 初回はサービス料・消費税の対象外
   const sub = feeTotal(t) + orderTotal(t.id);
-  const svc = state.fees.serviceOn ? Math.floor(sub * state.fees.service / 100) : 0;
-  const tax = state.fees.taxOn ? Math.floor((sub + svc) * state.fees.tax / 100) : 0;
+  const svc = (!isFirst && state.fees.serviceOn) ? Math.floor(sub * state.fees.service / 100) : 0;
+  const tax = (!isFirst && state.fees.taxOn)     ? Math.floor((sub + svc) * state.fees.tax / 100) : 0;
   const raw = sub + svc + tax;
   const total = Math.floor(raw / 100) * 100;      // 下二桁切り捨て
-  return { sub, svc, tax, raw, cut: raw - total, total };
+  return { sub, svc, tax, raw, cut: raw - total, total, isFirst };
 }
 const billTotal = t => bill(t).total;
 
@@ -761,11 +763,10 @@ const billTotal = t => bill(t).total;
 function totalsBlock(t){
   const b = bill(t);
   const line = (l,v)=>`<div class="srow"><div class="sn">${l}</div><div class="ss">${yen(v)}</div></div>`;
-  return `${(b.svc||b.tax||b.cut) ? `<div class="bhead">お会計<span>${yen(b.sub)}</span></div>
+  return `${(b.svc||b.tax) ? `<div class="bhead">お会計<span>${yen(b.sub)}</span></div>
       ${b.svc ? line(`サービス料 ${state.fees.service}%`, b.svc) : ""}
-      ${b.tax ? line(`消費税 ${state.fees.tax}%`, b.tax) : ""}
-      ${b.cut ? `<div class="srow"><div class="sn">端数切り捨て<span>下2桁</span></div>
-          <div class="ss">−${yen(b.cut)}</div></div>` : ""}` : ""}
+      ${b.tax ? line(`消費税 ${state.fees.tax}%`, b.tax) : ""}` : ""}
+    ${b.isFirst ? `<p class="note" style="margin:6px 0 0">初回のためサービス料・消費税は対象外です。</p>` : ""}
     <div class="stotal"><span>合計</span><b>${yen(b.total)}</b></div>`;
 }
 
@@ -800,8 +801,8 @@ function cartConfirm(tid){
   return true;
 }
 const outOfStock = p => p.track && p.stock <= 0;                 // 在庫切れ＝欠品
-const soldOut = p => p.soldout || outOfStock(p);                 // 注文できない状態
-const stockLabel = p => p.soldout ? "品切れ" : (outOfStock(p) ? "欠品" : "");
+const soldOut = p => outOfStock(p);                              // 注文できない状態
+const stockLabel = p => outOfStock(p) ? "欠品" : "";
 
 function fmt(ms){
   const neg = ms < 0; const s = Math.floor(Math.abs(ms)/1000);
@@ -1065,27 +1066,24 @@ function viewKitchen(){
       ${done.map(x=>card(x,true)).join("")}` : ""}`;
 }
 
-/* ---- 在庫（厨房・管理者） ---- */
+/* ---- 在庫（厨房・管理者）：在庫管理する に設定した商品だけを表示 ---- */
 function stockList(){
-  const groups = prodGroups();
-  if(!state.products.length) return `<div class="empty">商品が登録されていません。</div>`;
+  const groups = prodGroups().map(([c,ps])=>[c, ps.filter(p=>p.track)]).filter(([,ps])=>ps.length);
+  if(!groups.length) return `<div class="empty">在庫管理する に設定した商品がありません。<br>「商品」欄の各商品で切り替えてください。</div>`;
   return groups.map(([c,ps])=>{
-    if(!ps.length) return "";
     const open = !!state.openCats["stk:"+c];
     return `<div class="grp">
       <button class="grph" data-cat="stk:${esc(c)}" aria-expanded="${open}">
-        ${esc(c)}<b>${ps.filter(p=>soldOut(p)).length?`停止 ${ps.filter(p=>soldOut(p)).length} / `:""}${ps.length}</b>
+        ${esc(c)}<b>${ps.filter(p=>soldOut(p)).length?`欠品 ${ps.filter(p=>soldOut(p)).length} / `:""}${ps.length}</b>
         <span class="ar">${open?"▲":"▼"}</span></button>
       ${open ? `<div class="grpb">${ps.map(p=>`<div class="strow ${soldOut(p)?"out":""}">
           <div class="sname">${esc(p.name)}<small>${yen(p.price)}</small>${
             stockLabel(p)?`<em>${stockLabel(p)}</em>`:""}</div>
           <div class="sctl">
-            <button class="tog" data-ptrack="${p.id}" aria-pressed="${p.track}">在庫管理${p.track?"する":"しない"}</button>
-            ${p.track ? `<span class="slab">在庫</span>
-              <button class="sq" data-pstock="${p.id}:-1">−</button>
-              <input class="stk" type="number" inputmode="numeric" min="0" value="${p.stock}" data-pstocknum="${p.id}">
-              <button class="sq" data-pstock="${p.id}:1">＋</button>` : ""}
-            <button class="tog warn" data-psold="${p.id}" aria-pressed="${p.soldout}">${p.soldout?"品切れ":"提供中"}</button>
+            <span class="slab">在庫</span>
+            <button class="sq" data-pstock="${p.id}:-1">−</button>
+            <input class="stk" type="number" inputmode="numeric" min="0" value="${p.stock}" data-pstocknum="${p.id}">
+            <button class="sq" data-pstock="${p.id}:1">＋</button>
           </div></div>`).join("")}</div>` : ""}
     </div>`;
   }).join("");
@@ -1093,7 +1091,7 @@ function stockList(){
 function viewStock(){
   return `<div class="sec-head" style="margin-top:0"><h2>在庫</h2><div class="rule"></div></div>
     ${stockList()}
-    <p class="note">「在庫管理する」にした商品だけ在庫の数が出ます。注文が確定するたびに減り、0になると自動で<b style="color:var(--danger)">欠品</b>と表示されて注文端末で選べなくなります。「品切れ」は在庫に関係なく手で止めるときに使います。</p>`;
+    <p class="note">「商品」欄で在庫管理する にした商品だけがここに並びます。注文が確定するたびに減り、0になると自動で<b style="color:var(--danger)">欠品</b>と表示されて注文端末で選べなくなります。数が戻ったら＋で在庫を足してください。</p>`;
 }
 
 /* ---- order terminal（注文専用・卓固定） ---- */
@@ -1351,6 +1349,7 @@ function viewSettings(){
             <select class="inp rl" data-pcat="${p.id}">
               ${state.categories.map(x=>`<option value="${esc(x)}" ${p.cat===x?"selected":""}>${esc(x)}</option>`).join("")}
             </select>
+            <button class="tog" data-ptrack="${p.id}" aria-pressed="${p.track}">在庫管理${p.track?"する":"しない"}</button>
             <button data-pmv="${p.id}:-1" ${i===0?"disabled":""} aria-label="上へ">↑</button>
             <button data-pmv="${p.id}:1" ${i===ps.length-1?"disabled":""} aria-label="下へ">↓</button>
             <button data-pdel="${p.id}" aria-label="削除">✕</button>
@@ -1427,7 +1426,8 @@ function viewSettings(){
     ${feeRow("setCap","フリータイム上限","ここに達したら以降は増えません")}
     ${feeRow("nom","指名料","入店時に自動でつきます")}
     ${feeRow("douhan","同伴料","ホール・管理者が卓ごとにオンにします")}
-    ${feeRow("first","初回料金","初回回しの開始時に この額か ¥0 を選びます")}
+    ${feeRow("firstHigh","初回料金（高）","初回回しの開始時にどちらか選びます")}
+    ${feeRow("firstLow","初回料金（低）","初回回しの開始時にどちらか選びます")}
     <div class="prow">
       <span class="flab">サービス料<small>小計にかかります</small></span>
       <div class="prow-b">
@@ -1453,11 +1453,12 @@ function viewSettings(){
 
   ${sec("products","商品", state.products.length+"件", `
     ${prd || `<div class="empty">商品が登録されていません。</div>`}
+    <button class="add" data-addprod="1" style="margin-top:8px">＋ 商品を追加</button>
     <p class="note">ジャンル名を押すと中身を開閉できます。↑↓の並べ替えはそのジャンルの中で動きます。売値を変えても、すでに入っている伝票の金額は注文時のまま変わりません。</p>`)}
 
-  ${sec("stock","在庫", state.products.filter(p=>soldOut(p)).length ? "品切れ "+state.products.filter(p=>soldOut(p)).length+"件" : "—", `
+  ${sec("stock","在庫", state.products.filter(p=>soldOut(p)).length ? "欠品 "+state.products.filter(p=>soldOut(p)).length+"件" : "—", `
     ${stockList()}
-    <p class="note">「在庫管理する」にした商品だけ在庫の数が出ます。0になると自動で欠品になります。</p>`)}
+    <p class="note">「商品」欄で在庫管理する にした商品だけがここに並びます。0になると自動で欠品になります。</p>`)}
 
   ${sec("casts","キャスト", state.casts.filter(c=>c.active).length+"／"+state.casts.length+"人 出勤", `
     ${cst || `<div class="empty">キャストが登録されていません。</div>`}
@@ -1510,6 +1511,9 @@ function sheetTable(id){
   const r = rotOf(t.id);
   const rotActive = r && !r.done;
 
+  const nameField = can("manage") ? `<div class="field"><label>お客様名</label>
+      <input class="inp" value="${esc(t.customerName||"")}" data-cust="${t.id}" placeholder="お客様名（任意）"></div>` : "";
+
   const stepper = `<div class="field"><label>人数</label>
       <div class="stepper">
         <button data-guest="${t.id}:-1">−</button>
@@ -1525,7 +1529,9 @@ function sheetTable(id){
         (can("order") && t.status!=="closed") ? "注文・伝票" : "伝票を見る"}　${yen(billTotal(t))}</button></div>`;
 
   const act = state.casts.filter(c=>c.active);
-  const castField = `<div class="field"><label>担当キャスト${
+  const isFirstNow = t.firstFee !== null && t.firstFee !== undefined;
+  const castLabel = isFirstNow ? "送り指名" : "担当キャスト";
+  const castField = `<div class="field"><label>${castLabel}${
       (t.casts&&t.casts.length)?`（${t.casts.length}人）`:""}</label>
     ${act.length ? `<div class="castpick">${act.map(c=>{
         const on = (t.casts||[]).includes(c.id);
@@ -1551,11 +1557,11 @@ function sheetTable(id){
     extra = stepper + rotField;
     main  = `<button class="btn pri big wide" data-go="${t.id}:serving">接客開始</button>`;
   } else if(t.status === "serving"){
-    extra = stepper + castField + feeField + orderField + rotField;
+    extra = nameField + stepper + castField + feeField + orderField + rotField;
     main  = `<button class="btn warn big wide" data-go="${t.id}:billing">会計</button>`;
     back  = `<button class="btn gh sm" data-go="${t.id}:empty">空席に戻す</button>`;
   } else if(t.status === "billing"){
-    extra = castField + feeField + orderField;
+    extra = nameField + castField + feeField + orderField;
     main  = `<button class="btn pri big wide" data-go="${t.id}:closed">会計完了</button>`;
     back  = `<button class="btn gh sm" data-go="${t.id}:serving">接客中に戻す</button>`;
   } else {
@@ -1647,7 +1653,7 @@ function sheetNewRot(tableId){
   draft = {
     tableId: tableId || (state.tables.find(t=>t.status==="empty")||state.tables[0]||{}).id || null,
     guests: 1, minutes: state.defaultMin, perRound: 1, order: [],
-    firstFee: state.fees.first          // 初回料金（あり／なし）
+    firstFee: state.fees.firstHigh      // 初回料金
   };
   renderNewRot();
 }
@@ -1677,8 +1683,8 @@ function renderNewRot(){
 
     <div class="field"><label>初回料金</label>
       <div class="quick">
-        <button data-dfee="${state.fees.first}" aria-pressed="${d.firstFee===state.fees.first}">${yen(state.fees.first)}</button>
-        <button data-dfee="0" aria-pressed="${d.firstFee===0}">${yen(0)}</button>
+        <button data-dfee="${state.fees.firstHigh}" aria-pressed="${d.firstFee===state.fees.firstHigh}">${yen(state.fees.firstHigh)}</button>
+        <button data-dfee="${state.fees.firstLow}" aria-pressed="${d.firstFee===state.fees.firstLow}">${yen(state.fees.firstLow)}</button>
       </div>
       <p class="round-hint">${yen(d.firstFee)} × ${d.guests}名 ＝ <b>${yen(d.firstFee*d.guests)}</b></p>
       <p class="round-hint">初回料金を設定すると、この卓のセット料金と指名料は自動でオフになります（あとから卓のメニューで戻せます）。</p></div>
@@ -1714,7 +1720,7 @@ function renderNewRot(){
 
 /* ========== events ========== */
 document.addEventListener("click", e=>{
-  const el = e.target.closest("[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-psold],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
+  const el = e.target.closest("[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
   if(!el){
     if(e.target.dataset && e.target.dataset.sheet) closeSheet();
     return;
@@ -1894,11 +1900,6 @@ document.addEventListener("click", e=>{
     if(p) p.stock = Math.max(0, p.stock + Number(dv));
     commit(); return;
   }
-  if(d.psold){
-    const p = prodOf(d.psold);
-    if(p) p.soldout = !p.soldout;
-    commit(); return;
-  }
 
   /* sections / categories */
   if(d.sec){ state.openSecs[d.sec] = !state.openSecs[d.sec]; render(); return; }
@@ -1925,7 +1926,7 @@ document.addEventListener("click", e=>{
   /* products */
   if(d.addprod){
     const cat = (d.addprod === "1") ? (state.categories[0] || "未分類") : d.addprod;
-    state.products.push({ id:uid(), name:"新しい商品", price:0, cat, stock:10, track:false, soldout:false });
+    state.products.push({ id:uid(), name:"新しい商品", price:0, cat, stock:10, track:false });
     state.openCats[cat] = true; commit(); return;
   }
   if(d.pdel){
@@ -2027,7 +2028,7 @@ function commitSoft(){                     // 入力中は再描画せず配信�
 document.addEventListener("input", e=>{
   const t = e.target;
   if(t.dataset && (t.dataset.pname||t.dataset.pprice||t.dataset.tname||t.dataset.cname||
-     t.dataset.fee||t.dataset.pstocknum||t.dataset.catname||t.dataset.aname||t.dataset.apin)) commitSoft();
+     t.dataset.fee||t.dataset.pstocknum||t.dataset.catname||t.dataset.aname||t.dataset.apin||t.dataset.cust)) commitSoft();
   if(t.dataset.devpin){
     devPin = t.value.replace(/[^0-9]/g,"").slice(0,4);
     t.value = devPin; devErr = "";
@@ -2041,6 +2042,11 @@ document.addEventListener("input", e=>{
   }
   if(t.id==="setShop"){ state.shopName = t.value; $("#shopName").textContent = t.value||"店舗管理"; return; }
   if(t.dataset.tname){ tableOf(t.dataset.tname).name = t.value; return; }
+  if(t.dataset.cust){
+    if(!can("manage")) return;
+    const tb = tableOf(t.dataset.cust); if(tb) tb.customerName = t.value;
+    return;
+  }
   if(t.dataset.cname){ const c=state.casts.find(x=>x.id===t.dataset.cname); if(c) c.name=t.value; return; }
   if(t.dataset.pname){ const p=prodOf(t.dataset.pname); if(p) p.name=t.value; return; }
   if(t.dataset.pprice){
@@ -2064,7 +2070,7 @@ document.addEventListener("input", e=>{
   }
   if(t.dataset.pstocknum){
     const p = prodOf(t.dataset.pstocknum);
-    if(p){ p.stock = Math.max(0, parseInt(t.value,10) || 0); if(p.stock > 0) p.soldout = false; }
+    if(p){ p.stock = Math.max(0, parseInt(t.value,10) || 0); }
     return;
   }
   if(t.dataset.aname){ const a=state.accounts.find(x=>x.id===t.dataset.aname); if(a) a.name=t.value; return; }
@@ -2113,7 +2119,7 @@ function go(t, k){
     const r = rotOf(t.id); if(r) r.closed = true;
     delete state.orders[t.id];        // バッシング完了で伝票をリセット
     delete state.cart[t.id];
-    t.guests = 0; t.seatedAt = null; t.billedAt = null; t.firstFee = null; t.casts = [];
+    t.guests = 0; t.seatedAt = null; t.billedAt = null; t.firstFee = null; t.casts = []; t.customerName = "";
     t.fees = { set:true, nom:true, douhan:false };
   }
   t.status = k; t.statusSince = Date.now();
@@ -2162,7 +2168,7 @@ let lastRev = -1;
    ・PERSIST を true にすると、この端末のブラウザに保存して再読み込み後も残ります。
      （Claudeのプレビュー内では保存が使えないため既定は false）
    ========================================================== */
-const PERSIST = false;                 // ← サーバーに置いたら true にしてください
+const PERSIST = true;                  // 端末のブラウザに保存し、再読み込み後も残す
 const SYNC_KEY = "store-manager-v1";
 const CLIENT_ID = uid();
 const SHARED = ["shopName","tables","casts","categories","products","accounts",
