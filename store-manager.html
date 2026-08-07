@@ -74,8 +74,10 @@ button{cursor:pointer;border:0;background:none}
   display:flex;gap:4px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));
   background:rgba(16,19,25,.96);border-top:1px solid var(--line);backdrop-filter:blur(10px);
 }
+.tabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tabs::-webkit-scrollbar{height:0}
 .tabs button{
-  flex:1;padding:11px 6px;border-radius:10px;font-size:13px;font-weight:600;
+  flex:1 0 auto;min-width:58px;padding:11px 8px;border-radius:10px;font-size:12.5px;font-weight:600;
   color:var(--muted);background:transparent;transition:background .15s,color .15s;
 }
 .tabs button[aria-selected="true"]{background:var(--surface2);color:var(--gold)}
@@ -606,10 +608,10 @@ function mkTable(n){
 const ROLES = {
   order:   { label:"注文専用", tabs:["order"] },
   kitchen: { label:"厨房",     tabs:["kitchen","stock"] },
-  staff:   { label:"ホール",   tabs:["tables","order","first","sales"] },
-  manager: { label:"管理者",   tabs:["tables","first","kitchen","sales","settings"] }
+  staff:   { label:"ホール",   tabs:["tables","order","first","bill","sales"] },
+  manager: { label:"管理者",   tabs:["tables","first","bill","kitchen","sales","settings"] }
 };
-const TAB_LABEL = { tables:"テーブル", order:"注文", first:"初回",
+const TAB_LABEL = { tables:"テーブル", order:"注文", first:"初回", bill:"伝票",
                     kitchen:"厨房", stock:"在庫", sales:"売上", settings:"設定" };
 
 const SEED_CATS = ["ドリンク","ボトル・シャンパン","フード","その他"];
@@ -654,6 +656,7 @@ const state = {
   rev: 0,              // 注文の更新カウンタ（厨房画面の自動更新に使う）
   billHistory: [],     // 会計完了ごとに1件ずつ記録（売上タブ・日付検索・キャスト集計に使う）
   syncUrl: "",          // 外部の同期先URL（公開サイトとして動かすとき、端末間の連携に使う）
+  billTable: null,      // 伝票タブで選択中の卓
   rotations: [],
   defaultMin: 10,
   session: null,       // ログイン中のアカウントID
@@ -893,6 +896,7 @@ function render(){
               : state.tab==="first"   ? viewFirst()
               : state.tab==="kitchen" ? viewKitchen()
               : state.tab==="stock"   ? viewStock()
+              : state.tab==="bill"    ? viewBills()
               : state.tab==="sales"   ? viewSales()
               : viewSettings());
   lastRev = state.rev;
@@ -1053,6 +1057,98 @@ function alertBar(){
         ${nx ? `／ 次は <b>${esc(nx.map(castName).join("・"))}</b>` : "／ これが最終組です"}</div>
       <span class="t" data-tick="rot:${r.id}"></span></div>`;
   }).join("");
+}
+
+/* ---- 伝票 ----
+   進行中の卓と、会計済みの履歴の両方を、同じ内訳フォーマットで表示する。 */
+
+/* fees / orders / b をもらって内訳を組み立てる（進行中でも履歴でも同じものを使う） */
+function receiptBody(fees, orders, b, svcRate, taxRate){
+  const row = (label, amount, note) => `<div class="srow">
+      <div class="sn">${esc(label)}${note?`<span>${esc(note)}</span>`:""}</div>
+      <div class="ss">${yen(amount)}</div></div>`;
+
+  const feeRows = fees.length
+    ? `<div class="bhead first">料金<span>${yen(fees.reduce((s,l)=>s+l.amount,0))}</span></div>
+       ${fees.map(l=>row(l.name, l.amount, l.note)).join("")}` : "";
+
+  const orderSum = orders.reduce((s,l)=>s+l.price*l.qty, 0);
+  const orderRows = orders.length
+    ? `<div class="bhead ${fees.length?"":"first"}">ご注文<span>${yen(orderSum)}</span></div>
+       ${orders.map(l=>row(l.name, l.price*l.qty, `${yen(l.price)} × ${l.qty}`)).join("")}` : "";
+
+  return `<div class="slip">
+      ${feeRows}${orderRows}
+      ${(!fees.length && !orders.length) ? `<div class="empty" style="margin:0">まだ何も入っていません。</div>` : ""}
+      <div class="bhead">小計<span>${yen(b.sub)}</span></div>
+      ${b.svc ? row(`サービス料 ${svcRate}%`, b.svc) : ""}
+      ${row(`消費税（TAX） ${taxRate}%`, b.tax)}
+      ${b.isFirst ? `<p class="note" style="margin:6px 0 0">初回のためサービス料・消費税は対象外です。</p>` : ""}
+      <div class="stotal"><span>お支払い総額</span><b>${yen(b.total)}</b></div>
+    </div>`;
+}
+
+function viewBills(){
+  const live = state.tables.filter(t => t.status !== "empty");
+  if(state.billTable && !tableOf(state.billTable)) state.billTable = null;
+  if(state.billTable && tableOf(state.billTable).status === "empty") state.billTable = null;
+  if(!state.billTable && live.length) state.billTable = live[0].id;
+  const t = state.billTable ? tableOf(state.billTable) : null;
+
+  const strip = live.length
+    ? `<div class="tstrip">${live.map(x=>`
+        <button class="tchip s-${x.status}" data-btab="${x.id}" aria-pressed="${x.id===state.billTable}">
+          <div class="tn">${esc(x.name)}</div>
+          <div class="tm amt">${yen(billTotal(x))}</div></button>`).join("")}</div>`
+    : "";
+
+  let detail = "";
+  if(t){
+    const b = bill(t);
+    const fees = feeLines(t).map(l=>({ name:l.name, note:l.note||"", amount:l.amount }));
+    const orders = allLines(t.id).map(l=>({ name:l.name, price:l.price, qty:l.qty }));
+    const svcRate = state.fees.serviceOn ? state.fees.service : 0;
+    const taxRate = state.fees.taxOn ? state.fees.tax : 0;
+
+    const info = [];
+    info.push(S[t.status].label);
+    if(t.guests) info.push(`${t.guests}名`);
+    if(t.seatedAt) info.push(`${hhmm(t.seatedAt)} 入店`);
+    if(t.billedAt) info.push(`${hhmm(t.billedAt)} 会計`);
+    if((t.casts||[]).length) info.push(t.casts.map(castName).join("／"));
+
+    detail = `<div class="orderbar">
+        <div class="obt">${esc(t.name)}${t.customerName?`　${esc(t.customerName)} 様`:""}
+          <span>${info.join(" ・ ")}</span></div>
+        <div class="obtotal">${yen(b.total)}</div>
+      </div>
+      ${receiptBody(fees, orders, b, svcRate, taxRate)}`;
+  } else {
+    detail = `<div class="empty">現在ご利用中の卓はありません。</div>`;
+  }
+
+  /* 会計済みの履歴（新しい順） */
+  const hist = state.billHistory.slice().sort((a,c)=>c.at-a.at).slice(0, 30);
+  const histHtml = hist.length
+    ? hist.map(h=>{
+        const open = state.openBill === h.id;
+        return `<div class="grp">
+          <button class="grph" data-obill="${h.id}" aria-expanded="${open}">
+            ${new Date(h.at).toLocaleDateString("ja-JP")} ${hhmm(h.at)}　${esc(h.tableName)}${
+              h.customerName?`　${esc(h.customerName)} 様`:""}
+            <b>${yen(h.total)}</b><span class="ar">${open?"▲":"▼"}</span></button>
+          ${open ? `<div class="grpb">${receiptBody(
+              h.feeLines||[], h.orderLines||[],
+              { sub:h.sub, svc:h.svc, tax:h.tax, total:h.total, isFirst:h.isFirst },
+              h.svcRate||0, h.taxRate||0)}</div>` : ""}
+        </div>`;
+      }).join("")
+    : `<div class="empty">会計済みの伝票はまだありません。</div>`;
+
+  return `<div class="sec-head" style="margin-top:0"><h2>ご利用中</h2><div class="rule"></div></div>
+    ${strip}${detail}
+    <div class="sec-head"><h2>会計済み</h2><div class="rule"></div></div>
+    ${histHtml}`;
 }
 
 /* ---- 売上（日付検索・キャスト別集計） ---- */
@@ -1625,7 +1721,7 @@ function sheetTable(id){
   const orderField = `<div class="field"><label>伝票</label>
       <button class="btn wide" data-order="${t.id}">${
         (can("order") && t.status!=="closed") ? "注文・伝票" : "伝票を見る"}　${yen(billTotal(t))}</button>
-      ${(t.status==="billing"||t.status==="closed") ? `<button class="btn wide gh" data-receipt="${t.id}" style="margin-top:8px">お会計の内訳を見る</button>` : ""}</div>`;
+      <button class="btn wide gh" data-receipt="${t.id}" style="margin-top:8px">伝票タブで内訳を見る</button></div>`;
 
   const act = state.casts.filter(c=>c.active);
   const isFirstNow = t.firstFee !== null && t.firstFee !== undefined;
@@ -1708,35 +1804,6 @@ function sheetDevice(){
 }
 
 /* 管理者向け：伝票の確認のみ（注文の入力はできない） */
-/* 会計を押した瞬間の内訳を見せる専用の伝票（セット料金・指名・同伴・TAX・お支払い総額） */
-function sheetReceipt(tid){
-  const t = tableOf(tid); if(!t) return;
-  const b = bill(t);
-  const row = (label, amount, note) => `<div class="srow">
-      <div class="sn">${esc(label)}${note?`<span>${esc(note)}</span>`:""}</div>
-      <div class="ss">${yen(amount)}</div></div>`;
-
-  const setLine = t.firstFee !== null && t.firstFee !== undefined
-    ? feeLines(t).find(l=>l.key==="first")
-    : feeLines(t).find(l=>l.key==="set");
-  const nomLine = t.fees.nom ? feeLines(t).find(l=>l.key==="nom") : null;
-  const douhanLine = t.fees.douhan ? feeLines(t).find(l=>l.key==="douhan") : null;
-
-  openSheet(`<h3>お会計<small>${esc(t.name)}${t.customerName?`　${esc(t.customerName)} 様`:""}　${hhmm(Date.now())}</small></h3>
-    <div class="slip">
-      ${setLine ? row(setLine.name, setLine.amount, setLine.note) : ""}
-      ${nomLine ? row(nomLine.name, nomLine.amount) : ""}
-      ${douhanLine ? row(douhanLine.name, douhanLine.amount) : ""}
-      ${orderTotal(tid) ? row("ご注文合計", orderTotal(tid)) : ""}
-      <div class="bhead first">小計<span>${yen(b.sub)}</span></div>
-      ${b.svc ? row(`サービス料 ${state.fees.service}%`, b.svc) : ""}
-      ${row(`消費税（TAX） ${state.fees.taxOn?state.fees.tax:0}%`, b.tax)}
-      ${b.isFirst ? `<p class="note" style="margin:6px 0 0">初回のためサービス料・消費税は対象外です。</p>` : ""}
-      <div class="stotal"><span>お支払い総額</span><b>${yen(b.total)}</b></div>
-    </div>
-    <div class="sheet-acts"><button class="btn pri wide" data-closesheet="1">閉じる</button></div>`);
-}
-
 function sheetBill(tid){
   const t = tableOf(tid); if(!t) return;
   const fl = feeLines(t), bs = batchesOf(tid);
@@ -1848,7 +1915,7 @@ function renderNewRot(){
 
 /* ========== events ========== */
 document.addEventListener("click", e=>{
-  const el = e.target.closest("[data-receipt],[data-srange],[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
+  const el = e.target.closest("[data-btab],[data-obill],[data-receipt],[data-srange],[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
   if(!el){
     if(e.target.dataset && e.target.dataset.sheet) closeSheet();
     return;
@@ -1951,7 +2018,7 @@ document.addEventListener("click", e=>{
   if(d.tab){ state.tab = d.tab; state.filter="all"; render(); return; }
   if(d.filter){ state.filter = d.filter; render(); return; }
   if(d.table){ sheetTable(d.table); return; }
-  if(d.receipt){ sheetReceipt(d.receipt); return; }
+  if(d.receipt){ state.billTable = d.receipt; state.tab = "bill"; closeSheet(); window.scrollTo(0,0); render(); return; }
   if(d.closesheet){ closeSheet(); return; }
 
   /* table sheet */
@@ -1959,9 +2026,7 @@ document.addEventListener("click", e=>{
     const [id,k] = d.go.split(":"); const t = tableOf(id);
     if(k === "closed" && !can("manage")){ toast("会計完了はホール・管理者が行います"); return; }
     const inSheet = !!$("#sheetHost").firstElementChild;
-    const wasServing = t.status === "serving";
     go(t,k); commit();
-    if(k === "billing" && wasServing){ sheetReceipt(id); return; }   // 会計を押した瞬間の内訳を見せる
     if(inSheet){ if(k==="empty" || k==="closed") closeSheet(); else sheetTable(id); }
     return;
   }
@@ -2033,6 +2098,8 @@ document.addEventListener("click", e=>{
   }
 
   /* sections / categories */
+  if(d.btab){ state.billTable = d.btab; window.scrollTo(0,0); render(); return; }
+  if(d.obill){ state.openBill = (state.openBill === d.obill) ? null : d.obill; render(); return; }
   if(d.sec){ state.openSecs[d.sec] = !state.openSecs[d.sec]; render(); return; }
   if(d.srange){
     if(!state.salesRange) state.salesRange = { from: todayStr(), to: todayStr() };
@@ -2284,7 +2351,11 @@ function go(t, k){
       isFirst: b.isFirst, nom: !!t.fees.nom, douhan: !!t.fees.douhan,
       seatedAt: t.seatedAt, billedAt: t.billedAt,
       sub: b.sub, svc: b.svc, tax: b.tax, total: b.total,
-      orderCount: orderCount(t.id)
+      svcRate: state.fees.serviceOn ? state.fees.service : 0,
+      taxRate: state.fees.taxOn ? state.fees.tax : 0,
+      orderCount: orderCount(t.id),
+      feeLines: feeLines(t).map(l=>({ name:l.name, note:l.note||"", amount:l.amount })),
+      orderLines: allLines(t.id).map(l=>({ name:l.name, price:l.price, qty:l.qty }))
     });
   }
   if(k === "empty"){
@@ -2428,7 +2499,13 @@ if(CLOUD){
    同じ端末・同じブラウザのタブ間の連携（BroadcastChannel）だけで動きます。 */
 const SYNC_URL_KEY = "store-manager-sync-url";
 let remoteRev = 0, remoteTimer = null;
-try { const u = localStorage.getItem(SYNC_URL_KEY); if(u) state.syncUrl = u; } catch(e){}
+try {
+  const u = localStorage.getItem(SYNC_URL_KEY);
+  if(u !== null) state.syncUrl = u;
+  else if(typeof location !== "undefined" && /^https?:$/.test(location.protocol)){
+    state.syncUrl = location.origin + "/sync";   // 同梱サーバーから配信されている場合の既定値
+  }
+} catch(e){}
 
 async function pushRemote(){
   if(!state.syncUrl) return;
