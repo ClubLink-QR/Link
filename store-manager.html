@@ -653,6 +653,7 @@ const state = {
   openSecs: {},        // 設定で開いているセクション
   rev: 0,              // 注文の更新カウンタ（厨房画面の自動更新に使う）
   billHistory: [],     // 会計完了ごとに1件ずつ記録（売上タブ・日付検索・キャスト集計に使う）
+  syncUrl: "",          // 外部の同期先URL（公開サイトとして動かすとき、端末間の連携に使う）
   rotations: [],
   defaultMin: 10,
   session: null,       // ログイン中のアカウントID
@@ -1566,16 +1567,25 @@ function viewSettings(){
     </div>
     <p class="note">注文端末が操作されないままこの時間が過ぎると、自動で待機画面に戻ります。注文を確定しても画面は戻りません。</p>`)}
 
-  ${sec("data","連携とデータ", syncOn()?"同期中":"—", `
+  ${sec("data","連携とデータ", state.syncUrl ? "外部URLで連携中" : (CLOUD ? "Claude上で連携中" : "この端末のみ"), `
     <div class="sync ${syncOn()?"":"off"}"><span class="dot"></span>
-      ${syncOn()
-        ? "同じブラウザで開いている他のタブ・ウィンドウとリアルタイムに同期しています。"
-        : "この環境では他タブとの同期が使えません。"}</div>
+      同じブラウザの他タブ・他ウィンドウ：${chan ? "連携中" : "使えません"}</div>
+    <div class="sync ${CLOUD?"":"off"}"><span class="dot"></span>
+      Claudeの画面から開いている場合の端末間連携：${CLOUD ? "連携中" : "この配信方法では使えません"}</div>
+    <div class="sync ${state.syncUrl?"":"off"}"><span class="dot"></span>
+      外部URLでの端末間連携：${state.syncUrl ? "連携中（"+esc(state.syncUrl)+"）" : "未設定"}</div>
     <div class="sync ${PERSIST?"":"off"}"><span class="dot"></span>
-      ${PERSIST ? "この端末のブラウザに保存しています。再読み込みしても残ります。"
-                : "保存は無効です。ファイル冒頭の PERSIST を true にすると再読み込み後も残ります。"}</div>
-    <p class="note">別々のタブレット同士をつなぐにはサーバーが必要です。ファイル内の <b>send</b> と <b>chan.onmessage</b> の2か所を WebSocket に差し替えれば、そのまま端末をまたいで同期します。</p>
-    <button class="btn dan wide" style="margin-top:10px" data-reset="1">すべてリセット</button>`)}
+      この端末への保存：${PERSIST ? "有効（再読み込みしても残ります）" : "無効"}</div>
+
+    <div class="field" style="margin-top:14px"><label>外部同期URL</label>
+      <input class="inp" value="${esc(state.syncUrl||"")}" data-syncurl="1"
+             placeholder="https://example.com/sync（空欄で無効）">
+      <p class="round-hint">サイトとして公開して複数のタブレットをリアルタイムで連携させたい場合は、
+        「GETで最新の状態を返し、POSTで受け取った内容をそのまま保存する」だけの小さなエンドポイントを用意し、
+        ここにそのURLを入力してください（各端末で同じURLを設定します）。何も入力しなければ、
+        Claudeの画面から開いている間だけの連携になります。</p></div>
+
+    <button class="btn dan wide" style="margin-top:14px" data-reset="1">すべてリセット</button>`)}
   `;
 }
 
@@ -1614,7 +1624,8 @@ function sheetTable(id){
 
   const orderField = `<div class="field"><label>伝票</label>
       <button class="btn wide" data-order="${t.id}">${
-        (can("order") && t.status!=="closed") ? "注文・伝票" : "伝票を見る"}　${yen(billTotal(t))}</button></div>`;
+        (can("order") && t.status!=="closed") ? "注文・伝票" : "伝票を見る"}　${yen(billTotal(t))}</button>
+      ${(t.status==="billing"||t.status==="closed") ? `<button class="btn wide gh" data-receipt="${t.id}" style="margin-top:8px">お会計の内訳を見る</button>` : ""}</div>`;
 
   const act = state.casts.filter(c=>c.active);
   const isFirstNow = t.firstFee !== null && t.firstFee !== undefined;
@@ -1697,6 +1708,35 @@ function sheetDevice(){
 }
 
 /* 管理者向け：伝票の確認のみ（注文の入力はできない） */
+/* 会計を押した瞬間の内訳を見せる専用の伝票（セット料金・指名・同伴・TAX・お支払い総額） */
+function sheetReceipt(tid){
+  const t = tableOf(tid); if(!t) return;
+  const b = bill(t);
+  const row = (label, amount, note) => `<div class="srow">
+      <div class="sn">${esc(label)}${note?`<span>${esc(note)}</span>`:""}</div>
+      <div class="ss">${yen(amount)}</div></div>`;
+
+  const setLine = t.firstFee !== null && t.firstFee !== undefined
+    ? feeLines(t).find(l=>l.key==="first")
+    : feeLines(t).find(l=>l.key==="set");
+  const nomLine = t.fees.nom ? feeLines(t).find(l=>l.key==="nom") : null;
+  const douhanLine = t.fees.douhan ? feeLines(t).find(l=>l.key==="douhan") : null;
+
+  openSheet(`<h3>お会計<small>${esc(t.name)}${t.customerName?`　${esc(t.customerName)} 様`:""}　${hhmm(Date.now())}</small></h3>
+    <div class="slip">
+      ${setLine ? row(setLine.name, setLine.amount, setLine.note) : ""}
+      ${nomLine ? row(nomLine.name, nomLine.amount) : ""}
+      ${douhanLine ? row(douhanLine.name, douhanLine.amount) : ""}
+      ${orderTotal(tid) ? row("ご注文合計", orderTotal(tid)) : ""}
+      <div class="bhead first">小計<span>${yen(b.sub)}</span></div>
+      ${b.svc ? row(`サービス料 ${state.fees.service}%`, b.svc) : ""}
+      ${row(`消費税（TAX） ${state.fees.taxOn?state.fees.tax:0}%`, b.tax)}
+      ${b.isFirst ? `<p class="note" style="margin:6px 0 0">初回のためサービス料・消費税は対象外です。</p>` : ""}
+      <div class="stotal"><span>お支払い総額</span><b>${yen(b.total)}</b></div>
+    </div>
+    <div class="sheet-acts"><button class="btn pri wide" data-closesheet="1">閉じる</button></div>`);
+}
+
 function sheetBill(tid){
   const t = tableOf(tid); if(!t) return;
   const fl = feeLines(t), bs = batchesOf(tid);
@@ -1808,7 +1848,7 @@ function renderNewRot(){
 
 /* ========== events ========== */
 document.addEventListener("click", e=>{
-  const el = e.target.closest("[data-srange],[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
+  const el = e.target.closest("[data-receipt],[data-srange],[data-ptrack],[data-tcast],[data-persist],[data-firstoff],[data-dfee],[data-sec],[data-cat],[data-catadd],[data-catdel],[data-kdone],[data-kundo],[data-pstock],[data-feeon],[data-feetog],[data-idle],[data-okconfirm],[data-dev],[data-devclose],[data-devset],[data-tcancel],[data-tbus],[data-tstart],[data-thome],[data-ttab],[data-cadd],[data-cqty],[data-confirm],[data-cclear],[data-tbill],[data-key],[data-acct],[data-logout],[data-otab],[data-addacct],[data-adel],[data-tab],[data-filter],[data-table],[data-closesheet],[data-go],[data-guest],[data-new-rot],[data-order],[data-add],[data-qty],[data-addprod],[data-pdel],[data-pmv],[data-goto-rot],[data-next-rot],[data-pause-rot],[data-extend-rot],[data-close-rot],[data-restart-rot],[data-tcount],[data-tset],[data-dmin],[data-addcast],[data-delcast],[data-ctog],[data-deltable],[data-reset],[data-pick],[data-mv],[data-rm],[data-dguest],[data-dmin2],[data-dminset],[data-dper],[data-startrot]");
   if(!el){
     if(e.target.dataset && e.target.dataset.sheet) closeSheet();
     return;
@@ -1911,6 +1951,7 @@ document.addEventListener("click", e=>{
   if(d.tab){ state.tab = d.tab; state.filter="all"; render(); return; }
   if(d.filter){ state.filter = d.filter; render(); return; }
   if(d.table){ sheetTable(d.table); return; }
+  if(d.receipt){ sheetReceipt(d.receipt); return; }
   if(d.closesheet){ closeSheet(); return; }
 
   /* table sheet */
@@ -1918,7 +1959,9 @@ document.addEventListener("click", e=>{
     const [id,k] = d.go.split(":"); const t = tableOf(id);
     if(k === "closed" && !can("manage")){ toast("会計完了はホール・管理者が行います"); return; }
     const inSheet = !!$("#sheetHost").firstElementChild;
+    const wasServing = t.status === "serving";
     go(t,k); commit();
+    if(k === "billing" && wasServing){ sheetReceipt(id); return; }   // 会計を押した瞬間の内訳を見せる
     if(inSheet){ if(k==="empty" || k==="closed") closeSheet(); else sheetTable(id); }
     return;
   }
@@ -2126,7 +2169,7 @@ document.addEventListener("click", e=>{
 let inputTimer = null;
 function commitSoft(){                     // 入力中は再描画せず配信だけ遅らせて行う
   clearTimeout(inputTimer);
-  inputTimer = setTimeout(()=>{ send(); saveLocal(); pushCloud(); }, 400);
+  inputTimer = setTimeout(()=>{ send(); saveLocal(); pushCloud(); pushRemote(); }, 400);
 }
 document.addEventListener("input", e=>{
   const t = e.target;
@@ -2177,6 +2220,7 @@ document.addEventListener("input", e=>{
     return;
   }
   if(t.dataset.aname){ const a=state.accounts.find(x=>x.id===t.dataset.aname); if(a) a.name=t.value; return; }
+  if(t.dataset.syncurl !== undefined){ state.syncUrl = t.value; return; }   // 確定はblur(change)側で行う
   if(t.dataset.apin){
     const a=state.accounts.find(x=>x.id===t.dataset.apin);
     if(a){ a.pin = t.value.replace(/[^0-9]/g,"").slice(0,4); t.value = a.pin; }
@@ -2184,6 +2228,11 @@ document.addEventListener("input", e=>{
   }
 });
 document.addEventListener("change", e=>{
+  if(e.target.dataset.syncurl !== undefined){
+    setSyncUrl(e.target.value);
+    toast(state.syncUrl ? "外部URLに接続しました" : "外部同期を無効にしました");
+    render(); return;
+  }
   if(e.target.dataset.sfrom !== undefined){
     if(!state.salesRange) state.salesRange = { from: todayStr(), to: todayStr() };
     state.salesRange.from = e.target.value; render(); return;
@@ -2371,11 +2420,57 @@ if(CLOUD){
   cloudTimer = setInterval(pullCloud, 4000);   // 4秒おきに他端末の更新を取り込む
 }
 
+/* ---- 外部URLを使った同期（公開サイトとして配信した場合はこちらを使う）
+   settings > 外部連携 でURLを設定すると有効になります。
+   使うURLは「GETで最新状態を返し、POSTで受け取った内容をそのまま保存する」
+   簡単なエンドポイントであれば何でも構いません（自作の小さなサーバー／
+   Firebase・Supabase等のREST機能など）。何も設定しなければ今まで通り、
+   同じ端末・同じブラウザのタブ間の連携（BroadcastChannel）だけで動きます。 */
+const SYNC_URL_KEY = "store-manager-sync-url";
+let remoteRev = 0, remoteTimer = null;
+try { const u = localStorage.getItem(SYNC_URL_KEY); if(u) state.syncUrl = u; } catch(e){}
+
+async function pushRemote(){
+  if(!state.syncUrl) return;
+  try{
+    remoteRev++;
+    await fetch(state.syncUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from:CLIENT_ID, rev:remoteRev, at:Date.now(), data:snapshot() })
+    });
+  } catch(e){ /* 通信できなくても致命的ではないので黙って諦める（次回また送る） */ }
+}
+async function pullRemote(){
+  if(!state.syncUrl) return;
+  try{
+    const res = await fetch(state.syncUrl, { cache:"no-store" });
+    if(!res.ok) return;
+    const m = await res.json();
+    if(!m || m.from === CLIENT_ID || m.rev === remoteRev) return;
+    remoteRev = m.rev;
+    applyRemote(m.data);
+  } catch(e){ /* サーバー未設定・通信不可などは静かに無視 */ }
+}
+function setSyncUrl(url){
+  state.syncUrl = (url||"").trim();
+  try {
+    if(state.syncUrl) localStorage.setItem(SYNC_URL_KEY, state.syncUrl);
+    else localStorage.removeItem(SYNC_URL_KEY);
+  } catch(e){}
+  clearInterval(remoteTimer); remoteTimer = null;
+  if(state.syncUrl){
+    pullRemote();
+    remoteTimer = setInterval(pullRemote, 4000);
+  }
+}
+if(state.syncUrl) setSyncUrl(state.syncUrl);   // 起動時、前回保存したURLがあれば自動で再接続
+
 /* 状態を変えたら必ずこれを呼ぶ：画面更新＋他タブ／他端末へ配信＋保存 */
 function commit(){
   render();
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(()=>{ send(); saveLocal(); pushCloud(); }, 60);
+  syncTimer = setTimeout(()=>{ send(); saveLocal(); pushCloud(); pushRemote(); }, 60);
 }
 const syncOn = () => !!chan || CLOUD;
 
